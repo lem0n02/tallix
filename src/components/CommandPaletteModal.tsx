@@ -105,7 +105,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onSelectTab('settlements');
+                    onSelectTab('shared-groups');
                     onClose();
                   }}
                   className="flex items-center justify-between p-2.5 rounded-lg bg-[#27272a]/50 hover:bg-[#27272a] text-xs text-[#fafafa] transition-colors text-left"

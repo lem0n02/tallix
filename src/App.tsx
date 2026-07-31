@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  INITIAL_USER,
-  INITIAL_REGISTERED_USERS,
-  INITIAL_GROUPS,
-  INITIAL_EXPENSES,
-  INITIAL_SETTLEMENTS,
-  CATEGORIES,
-  INITIAL_AUDIT_LOGS,
-} from './data/mockData';
-import { Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, ThemeMode, LanguageMode, GuestVisit } from './types';
+import { CategoryItem, Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, ThemeMode, LanguageMode, GuestVisit } from './types';
 import { enrichGroupsWithBalances, isMemberMatch } from './utils/balanceEngine';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -32,6 +23,88 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { EditExpenseModal } from './components/EditExpenseModal';
 
 export type AppRoute = 'landing' | 'signin' | 'signup' | 'forgot-password' | 'app';
+
+type MockDataPayload = {
+  INITIAL_USER: UserProfile;
+  INITIAL_REGISTERED_USERS: RegisteredUser[];
+  INITIAL_MEMBERS: Array<{ id: string; name: string; email: string; role: string; balance: number }>;
+  INITIAL_GROUPS: Group[];
+  INITIAL_EXPENSES: Expense[];
+  INITIAL_SETTLEMENTS: Settlement[];
+  CATEGORIES: Array<{ id: string; name: string; iconName: string; color: string; budgetMonthly: number; currentSpent: number }>;
+  INITIAL_AUDIT_LOGS: AuditLog[];
+  INITIAL_GUEST_VISITS?: GuestVisit[];
+};
+
+type AppConfig = {
+  superAdminEmail: string;
+  superAdminPassword: string;
+};
+
+const EMPTY_USER: UserProfile = {
+  id: '',
+  name: '',
+  email: '',
+  role: '',
+  systemRole: 'User',
+  title: '',
+  department: '',
+  avatarGradient: 'from-blue-500 to-emerald-400',
+  liquidityLimit: 0,
+  currentLiquidity: 0,
+  monthlyBurnRate: 0,
+};
+
+const EMPTY_CONFIG: AppConfig = {
+  superAdminEmail: '',
+  superAdminPassword: '',
+};
+
+const buildSuperAdminUser = (config: AppConfig): RegisteredUser | null => {
+  if (!config.superAdminEmail) return null;
+
+  return {
+    id: 'usr_superadmin',
+    name: 'Super Admin',
+    email: config.superAdminEmail,
+    password: config.superAdminPassword,
+    systemRole: 'Admin',
+    roleTitle: 'Super Administrator',
+    department: 'Management',
+    avatarGradient: 'from-amber-500 to-emerald-500',
+    createdAt: '2026-01-01',
+    status: 'Active',
+    isVerified: true,
+  };
+};
+
+const ensureSuperAdminUser = (
+  users: RegisteredUser[],
+  config: AppConfig
+): RegisteredUser[] => {
+  const superAdmin = buildSuperAdminUser(config);
+  if (!superAdmin) return users;
+
+  const existingIndex = users.findIndex(
+    (user) => user.email.toLowerCase() === config.superAdminEmail.toLowerCase()
+  );
+
+  if (existingIndex >= 0) {
+    const nextUsers = [...users];
+    nextUsers[existingIndex] = {
+      ...nextUsers[existingIndex],
+      password: config.superAdminPassword,
+      systemRole: 'Admin',
+      roleTitle: nextUsers[existingIndex].roleTitle || 'Super Administrator',
+      department: nextUsers[existingIndex].department || 'Management',
+      avatarGradient: nextUsers[existingIndex].avatarGradient || 'from-amber-500 to-emerald-500',
+      status: nextUsers[existingIndex].status || 'Active',
+    };
+    return nextUsers;
+  }
+
+  return [superAdmin, ...users];
+};
 
 const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
   return rawExpenses.map((exp) => {
@@ -59,6 +132,9 @@ const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
 };
 
 export default function App() {
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [appConfig, setAppConfig] = useState<AppConfig>(EMPTY_CONFIG);
+
   // Theme & Language Global State
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('tallix_theme');
@@ -145,39 +221,90 @@ export default function App() {
   // Local storage state persistence
   const [user, setUser] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('tallix_user');
-    return saved ? JSON.parse(saved) : INITIAL_USER;
+    return saved ? JSON.parse(saved) : EMPTY_USER;
   });
 
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>(() => {
     const saved = localStorage.getItem('tallix_registered_users');
-    return saved ? JSON.parse(saved) : INITIAL_REGISTERED_USERS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem('tallix_expenses');
-    const parsed = saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+    const parsed = saved ? JSON.parse(saved) : [];
     return sanitizeExpenses(parsed);
   });
 
   const [groups, setGroups] = useState<Group[]>(() => {
     const saved = localStorage.getItem('tallix_groups');
-    return saved ? JSON.parse(saved) : INITIAL_GROUPS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [settlements, setSettlements] = useState<Settlement[]>(() => {
     const saved = localStorage.getItem('tallix_settlements');
-    return saved ? JSON.parse(saved) : INITIAL_SETTLEMENTS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem('tallix_audit_logs');
-    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [guestVisits, setGuestVisits] = useState<GuestVisit[]>(() => {
     const saved = localStorage.getItem('tallix_guest_visits');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSeedData = async () => {
+      try {
+        const [dataResponse, configResponse] = await Promise.all([
+          fetch('/api/mock-data'),
+          fetch('/api/config'),
+        ]);
+
+        if (!dataResponse.ok) {
+          throw new Error(`Failed to load mock data (${dataResponse.status})`);
+        }
+
+        if (!configResponse.ok) {
+          throw new Error(`Failed to load config (${configResponse.status})`);
+        }
+
+        const data: MockDataPayload = await dataResponse.json();
+        const config: AppConfig = await configResponse.json();
+
+        if (cancelled) return;
+
+        setAppConfig(config);
+
+        if (!localStorage.getItem('tallix_user')) setUser(data.INITIAL_USER);
+        const savedRegisteredUsers = localStorage.getItem('tallix_registered_users');
+        const initialRegisteredUsers = savedRegisteredUsers ? JSON.parse(savedRegisteredUsers) : data.INITIAL_REGISTERED_USERS;
+        setRegisteredUsers(ensureSuperAdminUser(initialRegisteredUsers, config));
+        if (!localStorage.getItem('tallix_expenses')) setExpenses(sanitizeExpenses(data.INITIAL_EXPENSES));
+        if (!localStorage.getItem('tallix_groups')) setGroups(data.INITIAL_GROUPS);
+        if (!localStorage.getItem('tallix_settlements')) setSettlements(data.INITIAL_SETTLEMENTS);
+        if (!localStorage.getItem('tallix_audit_logs')) setAuditLogs(data.INITIAL_AUDIT_LOGS);
+        if (!localStorage.getItem('tallix_guest_visits') && data.INITIAL_GUEST_VISITS) setGuestVisits(data.INITIAL_GUEST_VISITS);
+        setCategories(data.CATEGORIES);
+      } catch (error) {
+        console.error('Failed to bootstrap Tallix mock data:', error);
+      } finally {
+        if (!cancelled) setIsDataLoaded(true);
+      }
+    };
+
+    loadSeedData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Modals state
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -192,36 +319,74 @@ export default function App() {
 
   // Sync state to local storage
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_user', JSON.stringify(user));
   }, [user]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_auth', isAuthenticated ? 'true' : isGuestSession ? 'guest' : 'false');
   }, [isAuthenticated, isGuestSession]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_registered_users', JSON.stringify(registeredUsers));
   }, [registeredUsers]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_expenses', JSON.stringify(expenses));
   }, [expenses]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_groups', JSON.stringify(groups));
   }, [groups]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_settlements', JSON.stringify(settlements));
   }, [settlements]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
   useEffect(() => {
+    if (!isDataLoaded) return;
     localStorage.setItem('tallix_guest_visits', JSON.stringify(guestVisits));
   }, [guestVisits]);
+
+  useEffect(() => {
+    if (!isDataLoaded) return;
+
+    const syncTimer = window.setTimeout(() => {
+      const payload: MockDataPayload = {
+        INITIAL_USER: user,
+        INITIAL_REGISTERED_USERS: registeredUsers,
+        INITIAL_MEMBERS: groups[0]?.members ?? [],
+        INITIAL_GROUPS: groups,
+        INITIAL_EXPENSES: expenses,
+        INITIAL_SETTLEMENTS: settlements,
+        CATEGORIES: categories,
+        INITIAL_AUDIT_LOGS: auditLogs,
+        INITIAL_GUEST_VISITS: guestVisits,
+      };
+
+      fetch('/api/mock-data', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }).catch((error) => {
+        console.error('Failed to persist Tallix mock data:', error);
+      });
+    }, 250);
+
+    return () => window.clearTimeout(syncTimer);
+  }, [isDataLoaded, user, registeredUsers, groups, expenses, settlements, categories, auditLogs, guestVisits]);
 
   // Data Isolation Per Logged-In User with Dynamic Real-time Balance Calculation
   const userGroups = React.useMemo(() => {
@@ -269,19 +434,21 @@ export default function App() {
 
   // Route Protection: Redirect unauthenticated users trying to access app dashboard
   useEffect(() => {
+    if (!isDataLoaded) return;
     if (route === 'app') {
       if (!isAuthenticated && !isGuestSession) {
         navigateTo('signin');
       }
     }
-  }, [route, isAuthenticated, isGuestSession]);
+  }, [route, isAuthenticated, isGuestSession, isDataLoaded]);
 
   // Role Guard: Redirect non-admin users away from system-admin
   useEffect(() => {
+    if (!isDataLoaded) return;
     if (activeTab === 'system-admin' && user.systemRole !== 'Admin') {
       setActiveTab('dashboard');
     }
-  }, [activeTab, user]);
+  }, [activeTab, user, isDataLoaded]);
 
   // Handlers
   const handleSaveUser = (updatedUser: UserProfile) => {
@@ -547,7 +714,7 @@ export default function App() {
     ]);
   };
 
-  const handleUpdateExpenseStatus = (id: string, status: 'Completed' | 'Pending' | 'Approved' | 'Flagged') => {
+  const handleUpdateExpenseStatus = (id: string, status: 'Pending' | 'Flagged' | 'Settled') => {
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status } : e))
     );
@@ -556,7 +723,7 @@ export default function App() {
   const handleToggleExpenseStatus = (id: string) => {
     setExpenses((prev) =>
       prev.map((e) =>
-        e.id === id ? { ...e, status: e.status === 'Completed' ? 'Pending' : 'Completed' } : e
+        e.id === id ? { ...e, status: e.status === 'Settled' ? 'Pending' : 'Settled' } : e
       )
     );
   };
@@ -744,7 +911,7 @@ export default function App() {
 
   const handleSettleUp = (settlementData: Settlement | any) => {
     const matchedGroup = groups.find((g) => g.id === settlementData.groupId);
-    
+
     // Attempt to resolve payee member from group members list
     const payeeName = settlementData.payeeName || settlementData.toUserName || 'Recipient';
     const payeeMember = matchedGroup?.members.find(
@@ -805,6 +972,17 @@ export default function App() {
           }
         }}
       />
+    );
+  }
+
+  if (!isDataLoaded) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#09090b] text-[#fafafa]">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+          <p className="text-sm text-[#a1a1aa]">Loading Tallix seed data...</p>
+        </div>
+      </div>
     );
   }
 
@@ -963,7 +1141,7 @@ export default function App() {
           )}
 
           {activeTab === 'analytics' && (
-            <AnalyticsView expenses={userExpenses} categories={CATEGORIES} />
+            <AnalyticsView expenses={userExpenses} categories={categories} />
           )}
 
           {activeTab === 'ai-advisor' && <AIAssistantView expenses={userExpenses} />}
@@ -981,7 +1159,6 @@ export default function App() {
               onToggleUserAICopilot={handleToggleUserAICopilot}
               onAddUser={handleAddUserByAdmin}
               currentUserId={user.id}
-              lang={lang}
             />
           )}
         </div>
@@ -994,21 +1171,16 @@ export default function App() {
       <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
+        expenses={userExpenses}
+        groups={userGroups}
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setIsCommandPaletteOpen(false);
         }}
-        onOpenNewTransaction={() => {
+        onSelectGroup={(groupId) => {
+          setSelectedGroupId(groupId);
+          setActiveTab('shared-groups');
           setIsCommandPaletteOpen(false);
-          setIsNewTransactionOpen(true);
-        }}
-        onOpenNewGroup={() => {
-          setIsCommandPaletteOpen(false);
-          setIsNewGroupOpen(true);
-        }}
-        onOpenSettleUp={() => {
-          setIsCommandPaletteOpen(false);
-          setIsSettleUpOpen(true);
         }}
       />
 

@@ -16,7 +16,7 @@ interface SignInViewProps {
 }
 
 export const SignInView: React.FC<SignInViewProps> = ({
-  onBackToHome = () => {},
+  onBackToHome = () => { },
   onNavigateToSignUp,
   onNavigateToForgotPassword,
   onSuccessAuth,
@@ -26,9 +26,9 @@ export const SignInView: React.FC<SignInViewProps> = ({
   onForgotPassword,
   onOpenGuestModal,
 }) => {
-  const handleSuccess = onSuccessAuth || onSuccess || (() => {});
-  const handleSignUpNav = onNavigateToSignUp || onSwitchToSignUp || (() => {});
-  const handleForgotNav = onNavigateToForgotPassword || onForgotPassword || (() => {});
+  const handleSuccess = onSuccessAuth || onSuccess || (() => { });
+  const handleSignUpNav = onNavigateToSignUp || onSwitchToSignUp || (() => { });
+  const handleForgotNav = onNavigateToForgotPassword || onForgotPassword || (() => { });
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,40 +56,6 @@ export const SignInView: React.FC<SignInViewProps> = ({
   const handleAuthenticate = (emailToAuth: string, pwdToAuth: string) => {
     const cleanEmail = emailToAuth.trim().toLowerCase();
 
-    // 1. Check permanent Super Admin account
-    const isSuperAdminEmail =
-      cleanEmail === 'abdulatiflemon@gmail.com' ||
-      cleanEmail === 'abdulatiflemon@gmil.com' ||
-      cleanEmail === 'admin@tallix.io';
-
-    if (isSuperAdminEmail) {
-      // Validate Super Admin fixed credentials
-      const isValidAdminPwd = pwdToAuth === 'Talix.Lem0n' || pwdToAuth === 'password123';
-      if (!isValidAdminPwd) {
-        setErrors({ password: 'Invalid password for Super Admin account.' });
-        setLoading(false);
-        return;
-      }
-
-      const adminProfile: UserProfile = {
-        id: 'usr_admin_lemon',
-        name: 'Abdulatif Lemon',
-        email: cleanEmail,
-        role: 'System Administrator',
-        systemRole: 'Admin',
-        title: 'Administrator',
-        department: 'Management',
-        avatarGradient: 'from-amber-500 to-emerald-500',
-        liquidityLimit: 200000,
-        currentLiquidity: 0,
-        monthlyBurnRate: 0,
-      };
-
-      handleSuccess(adminProfile);
-      return;
-    }
-
-    // 2. Check registered normal users
     const matchedUser = registeredUsers.find(
       (u) => u.email.toLowerCase() === cleanEmail
     );
@@ -117,10 +83,10 @@ export const SignInView: React.FC<SignInViewProps> = ({
       id: matchedUser.id,
       name: matchedUser.name,
       email: matchedUser.email,
-      role: 'User Member',
-      systemRole: 'User',
-      title: matchedUser.roleTitle || 'Financial Member',
-      department: matchedUser.department || 'Personal Workspace',
+      role: matchedUser.systemRole === 'Admin' ? (matchedUser.roleTitle || 'Super Administrator') : 'User Member',
+      systemRole: matchedUser.systemRole,
+      title: matchedUser.roleTitle || (matchedUser.systemRole === 'Admin' ? 'Super Administrator' : 'Financial Member'),
+      department: matchedUser.department || (matchedUser.systemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
       avatarGradient: matchedUser.avatarGradient || 'from-emerald-500 to-teal-500',
       liquidityLimit: 120000,
       currentLiquidity: 0,
@@ -174,9 +140,8 @@ export const SignInView: React.FC<SignInViewProps> = ({
               if (errors.email) setErrors({ ...errors, email: undefined });
             }}
             placeholder="name@company.com"
-            className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-              errors.email ? 'border-red-500/80 focus:border-red-500' : 'border-[#27272a] focus:border-emerald-500'
-            }`}
+            className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.email ? 'border-red-500/80 focus:border-red-500' : 'border-[#27272a] focus:border-emerald-500'
+              }`}
           />
           {errors.email && <p className="text-[10px] text-red-400 mt-1 font-medium">{errors.email}</p>}
         </div>
@@ -206,9 +171,8 @@ export const SignInView: React.FC<SignInViewProps> = ({
                 if (errors.password) setErrors({ ...errors, password: undefined });
               }}
               placeholder="••••••••••••"
-              className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 pr-10 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                errors.password ? 'border-red-500/80 focus:border-red-500' : 'border-[#27272a] focus:border-emerald-500'
-              }`}
+              className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 pr-10 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.password ? 'border-red-500/80 focus:border-red-500' : 'border-[#27272a] focus:border-emerald-500'
+                }`}
             />
             <button
               type="button"

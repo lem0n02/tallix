@@ -17,9 +17,9 @@ export const NewGroupModal: React.FC<NewGroupModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('🏠 Rent');
+  const [category, setCategory] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const [memberEmails, setMemberEmails] = useState<string[]>(['s.chen@tallix.io']);
+  const [memberEmails, setMemberEmails] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState('');
 
   if (!isOpen) return null;
@@ -72,7 +72,6 @@ export const NewGroupModal: React.FC<NewGroupModalProps> = ({
       category,
       imageUrl: imageUrl || undefined,
       members: [
-        { id: 'usr_curr_1', name: 'Staff Engineer (You)', email: 'staff.architect@tallix.io', role: 'Admin', balance: 0 },
         ...memberEmails.map((email, idx) => ({
           id: `usr_new_${idx}_${Date.now()}`,
           name: email.split('@')[0].replace('.', ' '),

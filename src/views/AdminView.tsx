@@ -68,7 +68,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   // New User Form State
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('password123');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'User' | 'Admin'>('User');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -121,7 +121,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       id: `usr_admin_created_${Date.now()}`,
       name: newUserName.trim(),
       email: newUserEmail.trim().toLowerCase(),
-      password: newUserPassword || 'password123',
+      password: newUserPassword || undefined,
       systemRole: newUserRole,
       createdAt: new Date().toISOString().split('T')[0],
       status: 'Active',
@@ -145,7 +145,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 flex-1 overflow-y-auto custom-scrollbar bg-[#09090b] text-[#fafafa]">
       {/* Privacy Guarantee Header Banner */}
-      <div className="bg-gradient-to-r from-blue-950/40 via-[#18181b] to-emerald-950/30 border border-blue-500/20 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg">
+      <div className="bg-linear-to-r from-blue-950/40 via-[#18181b] to-emerald-950/30 border border-blue-500/20 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg">
         <div className="flex items-start gap-3.5">
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0 mt-0.5">
             <Lock className="w-5 h-5" />
@@ -250,11 +250,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <div className="flex items-center gap-2 border-b border-[#27272a] pb-3">
         <button
           onClick={() => setActiveAdminTab('users')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeAdminTab === 'users'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
-          }`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${activeAdminTab === 'users'
+            ? 'bg-blue-600 text-white shadow-md'
+            : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
+            }`}
         >
           <Users className="w-4 h-4" />
           <span>Registered Users ({registeredUsers.length})</span>
@@ -262,11 +261,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
         <button
           onClick={() => setActiveAdminTab('guests')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeAdminTab === 'guests'
-              ? 'bg-teal-600 text-white shadow-md'
-              : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
-          }`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${activeAdminTab === 'guests'
+            ? 'bg-teal-600 text-white shadow-md'
+            : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
+            }`}
         >
           <Globe className="w-4 h-4" />
           <span>{t('guestVisits')} ({guestVisits.length})</span>
@@ -274,11 +272,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
         <button
           onClick={() => setActiveAdminTab('squads')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeAdminTab === 'squads'
-              ? 'bg-purple-600 text-white shadow-md'
-              : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
-          }`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${activeAdminTab === 'squads'
+            ? 'bg-purple-600 text-white shadow-md'
+            : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
+            }`}
         >
           <FolderGit2 className="w-4 h-4" />
           <span>Squad Spaces ({groups.length})</span>
@@ -286,11 +283,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
         <button
           onClick={() => setActiveAdminTab('logs')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-            activeAdminTab === 'logs'
-              ? 'bg-emerald-600 text-white shadow-md'
-              : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
-          }`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${activeAdminTab === 'logs'
+            ? 'bg-emerald-600 text-white shadow-md'
+            : 'bg-[#18181b] text-[#a1a1aa] hover:text-white border border-[#27272a]'
+            }`}
         >
           <Terminal className="w-4 h-4" />
           <span>Security Audit Logs</span>
@@ -329,11 +325,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   <button
                     key={r}
                     onClick={() => setRoleFilter(r)}
-                    className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                      roleFilter === r
-                        ? 'bg-[#27272a] text-[#fafafa] shadow-sm'
-                        : 'text-[#71717a] hover:text-[#fafafa]'
-                    }`}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${roleFilter === r
+                      ? 'bg-[#27272a] text-[#fafafa] shadow-sm'
+                      : 'text-[#71717a] hover:text-[#fafafa]'
+                      }`}
                   >
                     {r}
                   </button>
@@ -344,7 +339,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
           {/* User Access Table */}
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[760px]">
+            <table className="w-full text-left border-collapse min-w-190">
               <thead>
                 <tr className="border-b border-[#27272a] text-[10px] uppercase tracking-wider font-bold text-[#71717a]">
                   <th className="py-3 px-4">Full Name</th>
@@ -391,11 +386,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           <select
                             value={u.systemRole}
                             onChange={(e) => onChangeUserRole(u.id, e.target.value as 'Admin' | 'User')}
-                            className={`bg-[#09090b] border px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider focus:outline-none cursor-pointer transition-all ${
-                              isAdmin
-                                ? 'text-blue-400 border-blue-500/30 focus:border-blue-500'
-                                : 'text-emerald-400 border-emerald-500/30 focus:border-emerald-500'
-                            }`}
+                            className={`bg-[#09090b] border px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider focus:outline-none cursor-pointer transition-all ${isAdmin
+                              ? 'text-blue-400 border-blue-500/30 focus:border-blue-500'
+                              : 'text-emerald-400 border-emerald-500/30 focus:border-emerald-500'
+                              }`}
                           >
                             <option value="User">User</option>
                             <option value="Admin">Admin</option>
@@ -408,11 +402,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <button
                           type="button"
                           onClick={() => onToggleUserAICopilot && onToggleUserAICopilot(u.id)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                            isAiEnabled
-                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20'
-                              : 'bg-zinc-800 text-[#71717a] border-zinc-700 hover:text-white'
-                          }`}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${isAiEnabled
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20'
+                            : 'bg-zinc-800 text-[#71717a] border-zinc-700 hover:text-white'
+                            }`}
                           title="Toggle AI Copilot Access for this user"
                         >
                           <Sparkles className={`w-3.5 h-3.5 ${isAiEnabled ? 'text-blue-400' : 'text-zinc-500'}`} />
@@ -423,16 +416,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       {/* Status */}
                       <td className="py-3.5 px-4">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                            isActive
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                              : 'bg-red-500/10 text-red-400 border-red-500/30'
-                          }`}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${isActive
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            : 'bg-red-500/10 text-red-400 border-red-500/30'
+                            }`}
                         >
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
-                            }`}
+                            className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+                              }`}
                           />
                           <span>{u.status}</span>
                         </span>
@@ -447,11 +438,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             {/* Enable/Disable Toggle */}
                             <button
                               onClick={() => onToggleUserStatus(u.id)}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border ${
-                                isActive
-                                  ? 'bg-[#09090b] hover:bg-amber-500/10 text-amber-400 border-[#27272a] hover:border-amber-500/40'
-                                  : 'bg-[#09090b] hover:bg-emerald-500/10 text-emerald-400 border-[#27272a] hover:border-emerald-500/40'
-                              }`}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border ${isActive
+                                ? 'bg-[#09090b] hover:bg-amber-500/10 text-amber-400 border-[#27272a] hover:border-amber-500/40'
+                                : 'bg-[#09090b] hover:bg-emerald-500/10 text-emerald-400 border-[#27272a] hover:border-emerald-500/40'
+                                }`}
                               title={isActive ? 'Disable User Account' : 'Enable User Account'}
                             >
                               {isActive ? (
@@ -515,7 +505,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
 
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[720px]">
+            <table className="w-full text-left border-collapse min-w-180">
               <thead>
                 <tr className="border-b border-[#27272a] text-[10px] uppercase tracking-wider font-bold text-[#71717a]">
                   <th className="py-3 px-4">Visitor Name & Email</th>
@@ -596,7 +586,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 className="p-4 bg-[#09090b] border border-[#27272a] rounded-xl flex items-center justify-between text-xs hover:border-[#3f3f46] transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full bg-gradient-to-tr ${g.avatarGradient || 'from-blue-500 to-indigo-500'}`} />
+                  <div className={`w-4 h-4 rounded-full bg-linear-to-tr ${g.avatarGradient || 'from-blue-500 to-indigo-500'}`} />
                   <div>
                     <p className="font-bold text-[#fafafa] text-sm">{g.name}</p>
                     <p className="text-[11px] text-[#71717a] mt-0.5">
@@ -629,11 +619,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
             <button
               onClick={() => setIsStreaming(!isStreaming)}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1 border cursor-pointer ${
-                isStreaming
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                  : 'bg-[#09090b] text-[#71717a] border-[#27272a]'
-              }`}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1 border cursor-pointer ${isStreaming
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-[#09090b] text-[#71717a] border-[#27272a]'
+                }`}
             >
               {isStreaming ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
               <span>{isStreaming ? 'Streaming' : 'Paused'}</span>
@@ -647,13 +636,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   {log.timestamp.includes('T') ? log.timestamp.split('T')[1]?.substring(0, 8) : log.timestamp}
                 </span>
                 <span
-                  className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
-                    log.level === 'INFO'
-                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                      : log.level === 'WARN'
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${log.level === 'INFO'
+                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                    : log.level === 'WARN'
                       ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                       : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                  }`}
+                    }`}
                 >
                   {log.level || 'INFO'}
                 </span>

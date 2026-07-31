@@ -15,7 +15,7 @@ interface SignUpViewProps {
 }
 
 export const SignUpView: React.FC<SignUpViewProps> = ({
-  onBackToHome = () => {},
+  onBackToHome = () => { },
   onNavigateToSignIn,
   onSuccessAuth,
   onRegisterUser,
@@ -24,8 +24,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   onRegister,
   onSwitchToSignIn,
 }) => {
-  const handleSuccess = onSuccessAuth || onSuccess || (() => {});
-  const handleSignInNav = onNavigateToSignIn || onSwitchToSignIn || (() => {});
+  const handleSuccess = onSuccessAuth || onSuccess || (() => { });
+  const handleSignInNav = onNavigateToSignIn || onSwitchToSignIn || (() => { });
   const handleRegister = onRegisterUser || onRegister;
 
   const [step, setStep] = useState<'details' | 'otp'>('details');
@@ -36,7 +36,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   const [acceptTerms, setAcceptTerms] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   // OTP state
   const [otpInput, setOtpInput] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -75,17 +75,11 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const isSuperAdminEmail =
-      cleanEmail === 'abdulatiflemon@gmail.com' ||
-      cleanEmail === 'abdulatiflemon@gmil.com' ||
-      cleanEmail === 'admin@tallix.io';
 
     if (!cleanEmail) {
       errs.email = 'Email address is required';
     } else if (!/\S+@\S+\.\S+/.test(cleanEmail)) {
       errs.email = 'Please enter a valid email address';
-    } else if (isSuperAdminEmail) {
-      errs.email = 'This email is reserved for Super Admin. Please sign in instead.';
     } else {
       // Check for duplicate registered email
       const existingUser = registeredUsers.find(
@@ -229,9 +223,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                   if (errors.fullName) setErrors({ ...errors, fullName: undefined });
                 }}
                 placeholder="Sarah Chen"
-                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                  errors.fullName ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
-                }`}
+                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.fullName ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
+                  }`}
               />
               {errors.fullName && <p className="text-[10px] text-red-400 mt-0.5 font-medium">{errors.fullName}</p>}
             </div>
@@ -249,9 +242,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                   if (errors.email) setErrors({ ...errors, email: undefined });
                 }}
                 placeholder="s.chen@tallix.io"
-                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                  errors.email ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
-                }`}
+                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.email ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
+                  }`}
               />
               {errors.email && (
                 <div className="mt-1 space-y-1">
@@ -283,9 +275,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                     if (errors.password) setErrors({ ...errors, password: undefined });
                   }}
                   placeholder="At least 8 characters"
-                  className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 pr-10 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                    errors.password ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
-                  }`}
+                  className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 pr-10 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.password ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
+                    }`}
                 />
                 <button
                   type="button"
@@ -328,9 +319,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                   if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined });
                 }}
                 placeholder="Re-enter password"
-                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                  errors.confirmPassword ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
-                }`}
+                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2 text-xs text-[#fafafa] focus:outline-none placeholder-[#52525b] ${errors.confirmPassword ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
+                  }`}
               />
               {errors.confirmPassword && <p className="text-[10px] text-red-400 mt-0.5 font-medium">{errors.confirmPassword}</p>}
             </div>
@@ -413,7 +403,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
           <form onSubmit={handleVerifyOtp} className="space-y-3.5">
             <div>
-              <label htmlFor="otpCode" className="block text-[11px] uppercase tracking-wider font-bold text-[#71717a] mb-1 flex items-center gap-1">
+              <label htmlFor="otpCode" className="text-[11px] uppercase tracking-wider font-bold text-[#71717a] mb-1 flex items-center gap-1">
                 <KeyRound className="w-3.5 h-3.5 text-emerald-400" /> Enter 6-Digit Code
               </label>
               <input
@@ -426,9 +416,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                   if (otpError) setOtpError('');
                 }}
                 placeholder="123456"
-                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 text-center font-mono text-base tracking-widest text-[#fafafa] focus:outline-none placeholder-[#52525b] ${
-                  otpError ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
-                }`}
+                className={`w-full bg-[#09090b] border rounded-xl px-3.5 py-2.5 text-center font-mono text-base tracking-widest text-[#fafafa] focus:outline-none placeholder-[#52525b] ${otpError ? 'border-red-500/80' : 'border-[#27272a] focus:border-emerald-500'
+                  }`}
               />
               {otpError && <p className="text-[10px] text-red-400 mt-1 font-medium">{otpError}</p>}
             </div>

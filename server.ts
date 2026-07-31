@@ -1,13 +1,28 @@
 import express from "express";
 import path from "path";
+import { readFile, writeFile } from "fs/promises";
+import { config as loadEnv } from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+
+loadEnv();
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
+
+  const mockDataPath = path.join(process.cwd(), "src", "data", "mockData.json");
+
+  const loadMockData = async () => {
+    const raw = await readFile(mockDataPath, "utf-8");
+    return JSON.parse(raw);
+  };
+
+  const saveMockData = async (data: unknown) => {
+    await writeFile(mockDataPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  };
 
   // Initialize Gemini AI Client (Lazy check / server-side standard)
   const getGenAI = () => {
@@ -34,6 +49,46 @@ async function startServer() {
       region: "us-east-1",
       latencyMs: Math.floor(Math.random() * 15) + 12,
       database: "connected (supabase/drizzle)",
+    });
+  });
+
+  app.get("/api/mock-data", async (req, res) => {
+    try {
+      const data = await loadMockData();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Failed to load mock data.",
+      });
+    }
+  });
+
+  app.get("/api/mock-data.json", async (req, res) => {
+    try {
+      const data = await loadMockData();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Failed to load mock data.",
+      });
+    }
+  });
+
+  app.put("/api/mock-data", async (req, res) => {
+    try {
+      await saveMockData(req.body);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Failed to save mock data.",
+      });
+    }
+  });
+
+  app.get("/api/config", (req, res) => {
+    res.json({
+      superAdminEmail: process.env.SUPERADMIN_EMAIL || "",
+      superAdminPassword: process.env.SUPERADMIN_PASSWORD || "",
     });
   });
 

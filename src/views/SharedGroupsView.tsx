@@ -263,11 +263,10 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
             <div
               key={group.id}
               onClick={() => setSelectedGroupId(group.id)}
-              className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between relative group ${
-                isSelected
+              className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between relative group ${isSelected
                   ? 'bg-[#18181b] border-blue-500 shadow-md ring-1 ring-blue-500/50'
                   : 'bg-[#18181b]/60 border-[#27272a] hover:border-[#3f3f46]'
-              }`}
+                }`}
             >
               <div>
                 <div className="flex items-start justify-between mb-2">
@@ -474,19 +473,18 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                   {t('netSquadBalance')}
                 </span>
                 <p
-                  className={`text-lg font-mono font-bold ${
-                    netBalance > 0
+                  className={`text-lg font-mono font-bold ${netBalance > 0
                       ? 'text-emerald-400'
                       : netBalance < 0
-                      ? 'text-rose-400'
-                      : 'text-[#fafafa]'
-                  }`}
+                        ? 'text-rose-400'
+                        : 'text-[#fafafa]'
+                    }`}
                 >
                   {netBalance > 0
                     ? `+${formatCurrency(netBalance)}`
                     : netBalance < 0
-                    ? `-${formatCurrency(Math.abs(netBalance))}`
-                    : `${formatCurrency(0)} (${t('balanced')})`}
+                      ? `-${formatCurrency(Math.abs(netBalance))}`
+                      : `${formatCurrency(0)} (${t('balanced')})`}
                 </p>
                 <span className="text-[10px] text-[#71717a]">
                   {netBalance === 0 ? t('allDebtsSettled') : netBalance > 0 ? t('youReceive') : t('youOwe')}
