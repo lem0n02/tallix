@@ -1,0 +1,6 @@
+{
+  "name": "Tallix",
+  "description": "Production-grade expense management application for personal and group expenses, transactions, settlements, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
