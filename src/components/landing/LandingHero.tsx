@@ -15,7 +15,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   return (
     <section className="relative pt-12 pb-20 overflow-hidden bg-radial from-emerald-950/20 via-[#09090b] to-[#09090b]">
       {/* Background Subtle Gradient Blobs */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none"></div>
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[550px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none"></div>
 
       <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
         {/* Left Column: Headlines & CTAs */}

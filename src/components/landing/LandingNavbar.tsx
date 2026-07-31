@@ -55,31 +55,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
 
         {/* Right: Actions */}
         <div className="flex items-center gap-3">
-          {/* Bangla / English Language Toggle */}
-          <div className="flex items-center bg-[#18181b] border border-[#27272a] rounded-lg p-0.5">
-            <button
-              onClick={() => setLang('en')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                lang === 'en'
-                  ? 'bg-emerald-600 text-white shadow-sm font-bold'
-                  : 'text-[#a1a1aa] hover:text-[#fafafa]'
-              }`}
-              title="Switch to English"
-            >
-              <span>English</span>
-            </button>
-            <button
-              onClick={() => setLang('bn')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                lang === 'bn'
-                  ? 'bg-emerald-600 text-white shadow-sm font-bold'
-                  : 'text-[#a1a1aa] hover:text-[#fafafa]'
-              }`}
-              title="বাংলা ভাষাতে পরিবর্তন করুন"
-            >
-              <span>বাংলা</span>
-            </button>
-          </div>
+
 
           <button
             onClick={onSignInClick}
