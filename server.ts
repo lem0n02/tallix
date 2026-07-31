@@ -1,9 +1,10 @@
 import express from "express";
 import path from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile, writeFile, mkdir, access } from "fs/promises";
 import { config as loadEnv } from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { constants as fsConstants } from "fs";
 
 loadEnv();
 
@@ -13,15 +14,29 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  const mockDataPath = path.join(process.cwd(), "src", "data", "mockData.json");
+  const seedMockDataPath = path.join(process.cwd(), "src", "data", "mockData.json");
+  const runtimeDir = path.join(process.cwd(), ".runtime");
+  const runtimeMockDataPath = path.join(runtimeDir, "mockData.json");
+
+  const ensureRuntimeMockData = async () => {
+    await mkdir(runtimeDir, { recursive: true });
+    try {
+      await access(runtimeMockDataPath, fsConstants.F_OK);
+    } catch {
+      const seedRaw = await readFile(seedMockDataPath, "utf-8");
+      await writeFile(runtimeMockDataPath, seedRaw, "utf-8");
+    }
+  };
 
   const loadMockData = async () => {
-    const raw = await readFile(mockDataPath, "utf-8");
+    await ensureRuntimeMockData();
+    const raw = await readFile(runtimeMockDataPath, "utf-8");
     return JSON.parse(raw);
   };
 
   const saveMockData = async (data: unknown) => {
-    await writeFile(mockDataPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+    await ensureRuntimeMockData();
+    await writeFile(runtimeMockDataPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
   };
 
   // Initialize Gemini AI Client (Lazy check / server-side standard)
