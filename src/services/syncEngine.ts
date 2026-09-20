@@ -21,6 +21,9 @@ import { SyncStatusInfo, SyncState, SyncPushResponse, SyncPullResponse } from '.
 import { getClientDeviceId } from './idGenerator';
 import { Expense, Group, Settlement } from '../types';
 
+// Cloudflare Worker API Base URL (configured in production via VITE_WORKER_URL)
+const SYNC_BASE_URL = (import.meta.env.VITE_WORKER_URL || '').replace(/\/$/, '');
+
 type SyncStatusListener = (status: SyncStatusInfo) => void;
 type DataUpdateListener = () => void;
 
@@ -159,7 +162,7 @@ class SyncEngine {
       // Light ping to health endpoint
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch('/api/health', {
+      const res = await fetch(`${SYNC_BASE_URL}/api/health`, {
         method: 'GET',
         signal: controller.signal,
         headers: { 'Cache-Control': 'no-cache' },
@@ -213,7 +216,7 @@ class SyncEngine {
           mutations: pendingMutations,
         };
 
-        const pushRes = await fetch('/api/sync/push', {
+        const pushRes = await fetch(`${SYNC_BASE_URL}/api/sync/push`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pushPayload),
@@ -237,7 +240,7 @@ class SyncEngine {
 
       // 2. PULL PHASE: fetch latest server updates
       const lastSyncToken = (await idbGetMetadata<string>('last_sync_timestamp')) || '';
-      const pullUrl = `/api/sync/pull?since=${encodeURIComponent(lastSyncToken)}&userId=${encodeURIComponent(
+      const pullUrl = `${SYNC_BASE_URL}/api/sync/pull?since=${encodeURIComponent(lastSyncToken)}&userId=${encodeURIComponent(
         this.currentUserId || ''
       )}`;
 
