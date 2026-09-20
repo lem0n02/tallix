@@ -20,11 +20,11 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Left: Brand */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={onSignInClick}>
-          <div className="w-8 h-8 rounded-lg overflow-hidden border border-[#27272a] bg-[#18181b] flex items-center justify-center shrink-0 shadow-md">
+          <div className="w-8 h-8 rounded-lg overflow-hidden border border-[#27272a] bg-white flex items-center justify-center shrink-0 shadow-md p-0.5">
             <img
               src={tallixLogo}
               alt="Tallix Logo"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
             />
           </div>

@@ -32,11 +32,11 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           </button>
 
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#18181b] border border-[#27272a] flex items-center justify-center shrink-0 shadow-lg">
+            <div className="w-9 h-9 rounded-xl overflow-hidden bg-white border border-[#27272a] flex items-center justify-center shrink-0 shadow-lg p-0.5">
               <img
                 src={tallixLogo}
                 alt="Tallix Logo"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
               />
             </div>

@@ -101,11 +101,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="flex items-center gap-3 cursor-pointer"
           onClick={() => handleNavClick(() => setActiveTab('dashboard'))}
         >
-          <div className="w-9 h-9 bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden shadow-lg flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 bg-white border border-[#27272a] rounded-xl overflow-hidden shadow-lg flex items-center justify-center shrink-0 p-0.5">
             <img
               src={tallixLogo}
               alt="Tallix Logo"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
             />
           </div>
