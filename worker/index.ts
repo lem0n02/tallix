@@ -16,6 +16,7 @@ export interface D1Database {
 
 export interface Env {
   DB: D1Database;
+  ASSETS?: { fetch(request: Request): Promise<Response> };
   GEMINI_API_KEY?: string;
   ENVIRONMENT?: string;
 }
@@ -46,24 +47,54 @@ export default {
     }
 
     try {
-      // 1. Health check
+      // 1. Health check endpoint
       if (url.pathname === '/api/health') {
+        let dbOk = false;
+        let dbError: string | null = null;
+        try {
+          if (env.DB) {
+            const queryRes = await env.DB.prepare('SELECT 1 as alive').first<{ alive: number }>();
+            dbOk = queryRes?.alive === 1;
+          }
+        } catch (err: any) {
+          dbOk = false;
+          dbError = err?.message || 'Failed to query D1 database';
+        }
+
+        return jsonResponse(
+          {
+            status: dbOk ? 'operational' : 'degraded',
+            engine: 'Cloudflare Workers + D1',
+            environment: env.ENVIRONMENT || 'production',
+            databaseConnected: dbOk,
+            ...(dbError ? { databaseError: dbError } : {}),
+            timestamp: new Date().toISOString(),
+          },
+          dbOk ? 200 : 503
+        );
+      }
+
+      // 2. Root path / handling
+      if (url.pathname === '/' || url.pathname === '') {
+        if (env.ASSETS) {
+          return await env.ASSETS.fetch(request);
+        }
+        // Fallback to health JSON if static assets binding is not yet attached
         let dbOk = false;
         try {
           if (env.DB) {
-            await env.DB.prepare('SELECT 1').first();
-            dbOk = true;
+            const queryRes = await env.DB.prepare('SELECT 1 as alive').first<{ alive: number }>();
+            dbOk = queryRes?.alive === 1;
           }
         } catch {
           dbOk = false;
         }
-
         return jsonResponse({
-          status: 'operational',
+          status: dbOk ? 'operational' : 'degraded',
           engine: 'Cloudflare Workers + D1',
           environment: env.ENVIRONMENT || 'production',
-          timestamp: new Date().toISOString(),
           databaseConnected: dbOk,
+          timestamp: new Date().toISOString(),
         });
       }
 
@@ -446,6 +477,21 @@ export default {
           deletedGroupIds,
           deletedSettlementIds,
         });
+      }
+
+      // 4. Audit Logs endpoint
+      if (url.pathname === '/api/audit-logs' && request.method === 'GET') {
+        try {
+          const logsRes = await env.DB.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100').all();
+          return jsonResponse({ logs: logsRes.results || [] });
+        } catch {
+          return jsonResponse({ logs: [] });
+        }
+      }
+
+      // 5. Static Assets fallback for all non-API paths (SPA routes, CSS, JS, images)
+      if (!url.pathname.startsWith('/api/') && env.ASSETS) {
+        return await env.ASSETS.fetch(request);
       }
 
       return jsonResponse({ error: 'Endpoint not found' }, 404);
