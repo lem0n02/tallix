@@ -102,38 +102,42 @@ export default function App() {
     if (path === '/login') return 'signin';
     if (path === '/signup') return 'signup';
     if (path === '/forgot-password') return 'forgot-password';
-    if (path === '/dashboard') return 'app';
+    if (path === '/dashboard' || path === '/admin/dashboard' || path.startsWith('/admin')) return 'app';
     return 'landing';
   };
 
   const [route, setRoute] = useState<AppRoute>(getRouteFromPath);
 
   // Sync route changes with browser pushState
-  const navigateTo = (newRoute: AppRoute) => {
+  const navigateTo = (newRoute: AppRoute, targetTab?: ActiveTab) => {
     setRoute(newRoute);
+    if (targetTab) {
+      setActiveTab(targetTab);
+    }
     const currentPath = window.location.pathname;
     let targetPath = '/';
     if (newRoute === 'landing') targetPath = '/';
     else if (newRoute === 'signin') targetPath = '/login';
     else if (newRoute === 'signup') targetPath = '/signup';
     else if (newRoute === 'forgot-password') targetPath = '/forgot-password';
-    else if (newRoute === 'app') targetPath = '/dashboard';
+    else if (newRoute === 'app') {
+      const tab = targetTab || activeTab;
+      targetPath = tab === 'system-admin' ? '/admin/dashboard' : '/dashboard';
+    }
 
     if (currentPath !== targetPath) {
       window.history.pushState(null, '', targetPath);
     }
   };
 
-  // Sync popstate navigation (browser back/forward)
-  useEffect(() => {
-    const handlePopState = () => {
-      setRoute(getRouteFromPath());
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const path = window.location.pathname;
+    if (path === '/admin/dashboard' || path.startsWith('/admin')) {
+      return 'system-admin';
+    }
+    return 'dashboard';
+  });
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   // Authentication State
@@ -150,6 +154,34 @@ export default function App() {
     const saved = localStorage.getItem('tallix_user');
     return saved ? JSON.parse(saved) : INITIAL_USER;
   });
+
+  // Sync popstate navigation (browser back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const currentRoute = getRouteFromPath();
+      setRoute(currentRoute);
+      if (window.location.pathname === '/admin/dashboard' || window.location.pathname.startsWith('/admin')) {
+        if (user.systemRole === 'Admin') {
+          setActiveTab('system-admin');
+        }
+      } else if (window.location.pathname === '/dashboard') {
+        setActiveTab('dashboard');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user.systemRole]);
+
+  // Tab change handler that keeps URL in sync with admin dashboard
+  const handleSelectTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (route === 'app') {
+      const targetPath = tab === 'system-admin' ? '/admin/dashboard' : '/dashboard';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  };
 
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>(() => {
     const saved = localStorage.getItem('tallix_registered_users');
@@ -345,6 +377,9 @@ export default function App() {
   useEffect(() => {
     if (activeTab === 'system-admin' && user.systemRole !== 'Admin') {
       setActiveTab('dashboard');
+      if (window.location.pathname === '/admin/dashboard' || window.location.pathname.startsWith('/admin')) {
+        window.history.pushState(null, '', '/dashboard');
+      }
     }
   }, [activeTab, user]);
 
@@ -502,8 +537,10 @@ export default function App() {
     // Automatic Role-Based Dashboard Redirection
     if (authenticatedUser.systemRole === 'Admin') {
       setActiveTab('system-admin');
+      navigateTo('app', 'system-admin');
     } else {
       setActiveTab('dashboard');
+      navigateTo('app', 'dashboard');
     }
 
     setAuditLogs((prev) => [
@@ -516,8 +553,6 @@ export default function App() {
       },
       ...prev,
     ]);
-
-    navigateTo('app');
   };
 
   const handleGuestSubmit = (guestRecord: GuestVisit) => {
@@ -1008,7 +1043,7 @@ export default function App() {
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSelectTab}
         user={user}
         groups={userGroups}
         selectedGroupId={selectedGroupId}

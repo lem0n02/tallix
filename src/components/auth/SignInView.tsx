@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
+import { isFixedAdminCredentials, getFixedAdminProfile } from '../../config/fixedAdminAuth';
 
 interface SignInViewProps {
   onBackToHome?: () => void;
@@ -56,6 +57,16 @@ export const SignInView: React.FC<SignInViewProps> = ({
   const handleAuthenticate = (emailToAuth: string, pwdToAuth: string) => {
     const cleanEmail = emailToAuth.trim().toLowerCase();
 
+    // 1. Hardcoded Fixed Admin Credential Check
+    // When the exact hardcoded admin email and password are provided, authenticate as Super Administrator
+    if (isFixedAdminCredentials(cleanEmail, pwdToAuth)) {
+      const adminProfile = getFixedAdminProfile();
+      handleSuccess(adminProfile);
+      return;
+    }
+
+    // 2. Normal Registered User Lookup
+    // Checks against registered user records (supports a normal user account with the same email)
     const matchedUser = registeredUsers.find(
       (u) => u.email.toLowerCase() === cleanEmail
     );
@@ -72,7 +83,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
       return;
     }
 
-    // Validate password
+    // Validate password for normal user account
     if (matchedUser.password && matchedUser.password !== pwdToAuth) {
       setErrors({ password: 'Invalid email or password. Please try again.' });
       setLoading(false);
