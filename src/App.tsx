@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { CategoryItem, Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, ThemeMode, LanguageMode, GuestVisit } from './types';
+import {
+  INITIAL_USER,
+  INITIAL_REGISTERED_USERS,
+  INITIAL_GROUPS,
+  INITIAL_EXPENSES,
+  INITIAL_SETTLEMENTS,
+  CATEGORIES,
+  INITIAL_AUDIT_LOGS,
+} from './data/mockData';
+import { Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, ThemeMode, LanguageMode, GuestVisit } from './types';
 import { enrichGroupsWithBalances, isMemberMatch } from './utils/balanceEngine';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -21,90 +30,11 @@ import { JoinGroupModal } from './components/JoinGroupModal';
 import { SettleUpModal } from './components/SettleUpModal';
 import { EditProfileModal } from './components/EditProfileModal';
 import { EditExpenseModal } from './components/EditExpenseModal';
+import { LocalRepository } from './services/localRepository';
+import { generateEntityId } from './services/idGenerator';
+import { syncEngine } from './services/syncEngine';
 
 export type AppRoute = 'landing' | 'signin' | 'signup' | 'forgot-password' | 'app';
-
-type MockDataPayload = {
-  INITIAL_USER: UserProfile;
-  INITIAL_REGISTERED_USERS: RegisteredUser[];
-  INITIAL_MEMBERS: Array<{ id: string; name: string; email: string; role: string; balance: number }>;
-  INITIAL_GROUPS: Group[];
-  INITIAL_EXPENSES: Expense[];
-  INITIAL_SETTLEMENTS: Settlement[];
-  CATEGORIES: Array<{ id: string; name: string; iconName: string; color: string; budgetMonthly: number; currentSpent: number }>;
-  INITIAL_AUDIT_LOGS: AuditLog[];
-  INITIAL_GUEST_VISITS?: GuestVisit[];
-};
-
-type AppConfig = {
-  superAdminEmail: string;
-  superAdminPassword: string;
-};
-
-const EMPTY_USER: UserProfile = {
-  id: '',
-  name: '',
-  email: '',
-  role: '',
-  systemRole: 'User',
-  title: '',
-  department: '',
-  avatarGradient: 'from-blue-500 to-emerald-400',
-  liquidityLimit: 0,
-  currentLiquidity: 0,
-  monthlyBurnRate: 0,
-};
-
-const EMPTY_CONFIG: AppConfig = {
-  superAdminEmail: '',
-  superAdminPassword: '',
-};
-
-const buildSuperAdminUser = (config: AppConfig): RegisteredUser | null => {
-  if (!config.superAdminEmail) return null;
-
-  return {
-    id: 'usr_superadmin',
-    name: 'Super Admin',
-    email: config.superAdminEmail,
-    password: config.superAdminPassword,
-    systemRole: 'Admin',
-    roleTitle: 'Super Administrator',
-    department: 'Management',
-    avatarGradient: 'from-amber-500 to-emerald-500',
-    createdAt: '2026-01-01',
-    status: 'Active',
-    isVerified: true,
-  };
-};
-
-const ensureSuperAdminUser = (
-  users: RegisteredUser[],
-  config: AppConfig
-): RegisteredUser[] => {
-  const superAdmin = buildSuperAdminUser(config);
-  if (!superAdmin) return users;
-
-  const existingIndex = users.findIndex(
-    (user) => user.email.toLowerCase() === config.superAdminEmail.toLowerCase()
-  );
-
-  if (existingIndex >= 0) {
-    const nextUsers = [...users];
-    nextUsers[existingIndex] = {
-      ...nextUsers[existingIndex],
-      password: config.superAdminPassword,
-      systemRole: 'Admin',
-      roleTitle: nextUsers[existingIndex].roleTitle || 'Super Administrator',
-      department: nextUsers[existingIndex].department || 'Management',
-      avatarGradient: nextUsers[existingIndex].avatarGradient || 'from-amber-500 to-emerald-500',
-      status: nextUsers[existingIndex].status || 'Active',
-    };
-    return nextUsers;
-  }
-
-  return [superAdmin, ...users];
-};
 
 const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
   return rawExpenses.map((exp) => {
@@ -132,9 +62,6 @@ const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
 };
 
 export default function App() {
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-  const [appConfig, setAppConfig] = useState<AppConfig>(EMPTY_CONFIG);
-
   // Theme & Language Global State
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('tallix_theme');
@@ -221,90 +148,39 @@ export default function App() {
   // Local storage state persistence
   const [user, setUser] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('tallix_user');
-    return saved ? JSON.parse(saved) : EMPTY_USER;
+    return saved ? JSON.parse(saved) : INITIAL_USER;
   });
 
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>(() => {
     const saved = localStorage.getItem('tallix_registered_users');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : INITIAL_REGISTERED_USERS;
   });
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem('tallix_expenses');
-    const parsed = saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : INITIAL_EXPENSES;
     return sanitizeExpenses(parsed);
   });
 
   const [groups, setGroups] = useState<Group[]>(() => {
     const saved = localStorage.getItem('tallix_groups');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : INITIAL_GROUPS;
   });
 
   const [settlements, setSettlements] = useState<Settlement[]>(() => {
     const saved = localStorage.getItem('tallix_settlements');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : INITIAL_SETTLEMENTS;
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem('tallix_audit_logs');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
   });
 
   const [guestVisits, setGuestVisits] = useState<GuestVisit[]>(() => {
     const saved = localStorage.getItem('tallix_guest_visits');
     return saved ? JSON.parse(saved) : [];
   });
-
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSeedData = async () => {
-      try {
-        const [dataResponse, configResponse] = await Promise.all([
-          fetch('/api/mock-data'),
-          fetch('/api/config'),
-        ]);
-
-        if (!dataResponse.ok) {
-          throw new Error(`Failed to load mock data (${dataResponse.status})`);
-        }
-
-        if (!configResponse.ok) {
-          throw new Error(`Failed to load config (${configResponse.status})`);
-        }
-
-        const data: MockDataPayload = await dataResponse.json();
-        const config: AppConfig = await configResponse.json();
-
-        if (cancelled) return;
-
-        setAppConfig(config);
-
-        if (!localStorage.getItem('tallix_user')) setUser(data.INITIAL_USER);
-        const savedRegisteredUsers = localStorage.getItem('tallix_registered_users');
-        const initialRegisteredUsers = savedRegisteredUsers ? JSON.parse(savedRegisteredUsers) : data.INITIAL_REGISTERED_USERS;
-        setRegisteredUsers(ensureSuperAdminUser(initialRegisteredUsers, config));
-        if (!localStorage.getItem('tallix_expenses')) setExpenses(sanitizeExpenses(data.INITIAL_EXPENSES));
-        if (!localStorage.getItem('tallix_groups')) setGroups(data.INITIAL_GROUPS);
-        if (!localStorage.getItem('tallix_settlements')) setSettlements(data.INITIAL_SETTLEMENTS);
-        if (!localStorage.getItem('tallix_audit_logs')) setAuditLogs(data.INITIAL_AUDIT_LOGS);
-        if (!localStorage.getItem('tallix_guest_visits') && data.INITIAL_GUEST_VISITS) setGuestVisits(data.INITIAL_GUEST_VISITS);
-        setCategories(data.CATEGORIES);
-      } catch (error) {
-        console.error('Failed to bootstrap Tallix mock data:', error);
-      } finally {
-        if (!cancelled) setIsDataLoaded(true);
-      }
-    };
-
-    loadSeedData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Modals state
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -319,74 +195,98 @@ export default function App() {
 
   // Sync state to local storage
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_user', JSON.stringify(user));
   }, [user]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_auth', isAuthenticated ? 'true' : isGuestSession ? 'guest' : 'false');
   }, [isAuthenticated, isGuestSession]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_registered_users', JSON.stringify(registeredUsers));
   }, [registeredUsers]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_expenses', JSON.stringify(expenses));
   }, [expenses]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_groups', JSON.stringify(groups));
   }, [groups]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_settlements', JSON.stringify(settlements));
   }, [settlements]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
   useEffect(() => {
-    if (!isDataLoaded) return;
     localStorage.setItem('tallix_guest_visits', JSON.stringify(guestVisits));
   }, [guestVisits]);
 
+  // Offline-First IndexedDB Initializer & Remote Synchronization Subscription
   useEffect(() => {
-    if (!isDataLoaded) return;
+    let isMounted = true;
 
-    const syncTimer = window.setTimeout(() => {
-      const payload: MockDataPayload = {
-        INITIAL_USER: user,
-        INITIAL_REGISTERED_USERS: registeredUsers,
-        INITIAL_MEMBERS: groups[0]?.members ?? [],
-        INITIAL_GROUPS: groups,
-        INITIAL_EXPENSES: expenses,
-        INITIAL_SETTLEMENTS: settlements,
-        CATEGORIES: categories,
-        INITIAL_AUDIT_LOGS: auditLogs,
-        INITIAL_GUEST_VISITS: guestVisits,
-      };
+    // Initialize local IndexedDB database and migrate localStorage seed
+    LocalRepository.initialize({
+      expenses: sanitizeExpenses(INITIAL_EXPENSES),
+      groups: INITIAL_GROUPS,
+      settlements: INITIAL_SETTLEMENTS,
+      registeredUsers: INITIAL_REGISTERED_USERS,
+      auditLogs: INITIAL_AUDIT_LOGS,
+      guestVisits: [],
+    }).then((loadedData) => {
+      if (!isMounted) return;
+      if (loadedData.expenses) {
+        setExpenses(sanitizeExpenses(loadedData.expenses));
+      }
+      if (loadedData.groups) {
+        setGroups(loadedData.groups);
+      }
+      if (loadedData.settlements) {
+        setSettlements(loadedData.settlements);
+      }
+      if (loadedData.registeredUsers && loadedData.registeredUsers.length > 0) {
+        setRegisteredUsers(loadedData.registeredUsers);
+      }
+      if (loadedData.auditLogs && loadedData.auditLogs.length > 0) {
+        setAuditLogs(loadedData.auditLogs);
+      }
+      if (loadedData.guestVisits && loadedData.guestVisits.length > 0) {
+        setGuestVisits(loadedData.guestVisits);
+      }
+    });
 
-      fetch('/api/mock-data', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      }).catch((error) => {
-        console.error('Failed to persist Tallix mock data:', error);
-      });
-    }, 250);
+    // When background sync pulls remote changes from Cloudflare, update local state
+    const unsubscribeData = syncEngine.subscribeDataUpdates(async () => {
+      if (!isMounted) return;
+      const [allExp, allGrp, allStl, allUsr] = await Promise.all([
+        LocalRepository.getAllExpenses(),
+        LocalRepository.getAllGroups(),
+        LocalRepository.getAllSettlements(),
+        LocalRepository.getAllRegisteredUsers(),
+      ]);
+      setExpenses(sanitizeExpenses(allExp));
+      setGroups(allGrp);
+      setSettlements(allStl);
+      if (allUsr && allUsr.length > 0) {
+        setRegisteredUsers(allUsr);
+      }
+    });
 
-    return () => window.clearTimeout(syncTimer);
-  }, [isDataLoaded, user, registeredUsers, groups, expenses, settlements, categories, auditLogs, guestVisits]);
+    return () => {
+      isMounted = false;
+      unsubscribeData();
+    };
+  }, []);
+
+  // Update syncEngine active user ID
+  useEffect(() => {
+    syncEngine.setUserId(user?.id || null);
+  }, [user?.id]);
 
   // Data Isolation Per Logged-In User with Dynamic Real-time Balance Calculation
   const userGroups = React.useMemo(() => {
@@ -434,21 +334,19 @@ export default function App() {
 
   // Route Protection: Redirect unauthenticated users trying to access app dashboard
   useEffect(() => {
-    if (!isDataLoaded) return;
     if (route === 'app') {
       if (!isAuthenticated && !isGuestSession) {
         navigateTo('signin');
       }
     }
-  }, [route, isAuthenticated, isGuestSession, isDataLoaded]);
+  }, [route, isAuthenticated, isGuestSession]);
 
   // Role Guard: Redirect non-admin users away from system-admin
   useEffect(() => {
-    if (!isDataLoaded) return;
     if (activeTab === 'system-admin' && user.systemRole !== 'Admin') {
       setActiveTab('dashboard');
     }
-  }, [activeTab, user, isDataLoaded]);
+  }, [activeTab, user]);
 
   // Handlers
   const handleSaveUser = (updatedUser: UserProfile) => {
@@ -467,6 +365,7 @@ export default function App() {
 
   const handleRegisterUser = (newUser: RegisteredUser) => {
     setRegisteredUsers((prev) => [newUser, ...prev]);
+    LocalRepository.saveRegisteredUser(newUser);
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -481,6 +380,7 @@ export default function App() {
 
   const handleDeleteUser = (userIdToDelete: string) => {
     setRegisteredUsers((prev) => prev.filter((u) => u.id !== userIdToDelete));
+    LocalRepository.deleteRegisteredUser(userIdToDelete);
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -494,15 +394,20 @@ export default function App() {
   };
 
   const handleToggleUserStatus = (userId: string) => {
+    let updatedUser: RegisteredUser | undefined;
     setRegisteredUsers((prev) =>
       prev.map((u) => {
         if (u.id === userId) {
           const nextStatus = u.status === 'Active' ? 'Disabled' : 'Active';
-          return { ...u, status: nextStatus };
+          updatedUser = { ...u, status: nextStatus };
+          return updatedUser;
         }
         return u;
       })
     );
+    if (updatedUser) {
+      LocalRepository.updateRegisteredUser(updatedUser);
+    }
     const targetUser = registeredUsers.find((u) => u.id === userId);
     const newStatus = targetUser?.status === 'Active' ? 'Disabled' : 'Active';
     setAuditLogs((prev) => [
@@ -518,9 +423,19 @@ export default function App() {
   };
 
   const handleChangeUserRole = (userId: string, newRole: 'Admin' | 'User') => {
+    let updatedUser: RegisteredUser | undefined;
     setRegisteredUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, systemRole: newRole } : u))
+      prev.map((u) => {
+        if (u.id === userId) {
+          updatedUser = { ...u, systemRole: newRole };
+          return updatedUser;
+        }
+        return u;
+      })
     );
+    if (updatedUser) {
+      LocalRepository.updateRegisteredUser(updatedUser);
+    }
     const targetUser = registeredUsers.find((u) => u.id === userId);
     setAuditLogs((prev) => [
       {
@@ -535,15 +450,20 @@ export default function App() {
   };
 
   const handleToggleUserAICopilot = (userId: string) => {
+    let updatedUser: RegisteredUser | undefined;
     setRegisteredUsers((prev) =>
       prev.map((u) => {
         if (u.id === userId) {
           const nextVal = u.aiCopilotEnabled === false ? true : false;
-          return { ...u, aiCopilotEnabled: nextVal };
+          updatedUser = { ...u, aiCopilotEnabled: nextVal };
+          return updatedUser;
         }
         return u;
       })
     );
+    if (updatedUser) {
+      LocalRepository.updateRegisteredUser(updatedUser);
+    }
     const targetUser = registeredUsers.find((u) => u.id === userId);
     setAuditLogs((prev) => [
       {
@@ -559,6 +479,7 @@ export default function App() {
 
   const handleAddUserByAdmin = (newUser: RegisteredUser) => {
     setRegisteredUsers((prev) => [newUser, ...prev]);
+    LocalRepository.saveRegisteredUser(newUser);
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -601,6 +522,7 @@ export default function App() {
 
   const handleGuestSubmit = (guestRecord: GuestVisit) => {
     setGuestVisits((prev) => [guestRecord, ...prev]);
+    LocalRepository.addGuestVisit(guestRecord);
     setIsAuthenticated(false);
     setIsGuestSession(true);
     localStorage.setItem('tallix_auth', 'guest');
@@ -674,9 +596,12 @@ export default function App() {
     const finalPaidByUserId = matchedPayer ? matchedPayer.id : user.id;
     const finalPaidByName = matchedPayer ? matchedPayer.name : user.name;
 
+    const exactAmount = Math.round(Number(newExpenseData.amount) * 100) / 100;
+
     const createdExpense: Expense = {
-      id: `exp_${Date.now()}`,
+      id: generateEntityId('exp'),
       ...newExpenseData,
+      amount: exactAmount,
       isShared: !!newExpenseData.isShared,
       groupId: targetGroupId,
       groupName: newExpenseData.isShared ? (selectedGroup?.name || newExpenseData.groupName) : undefined,
@@ -686,16 +611,20 @@ export default function App() {
       paidByName: finalPaidByName,
     } as Expense;
 
+    // Persist locally in IndexedDB and enqueue for sync
+    LocalRepository.createExpense(createdExpense, user.id);
     setExpenses((prev) => [createdExpense, ...prev]);
 
     if (createdExpense.isShared && createdExpense.groupId) {
       setGroups((prevGroups) =>
         prevGroups.map((g) => {
           if (g.id === createdExpense.groupId) {
-            return {
+            const updated = {
               ...g,
-              totalSpent: g.totalSpent + createdExpense.amount,
+              totalSpent: Math.round((g.totalSpent + createdExpense.amount) * 100) / 100,
             };
+            LocalRepository.updateGroup(updated, user.id);
+            return updated;
           }
           return g;
         })
@@ -714,21 +643,35 @@ export default function App() {
     ]);
   };
 
-  const handleUpdateExpenseStatus = (id: string, status: 'Pending' | 'Flagged' | 'Settled') => {
+  const handleUpdateExpenseStatus = (id: string, status: 'Completed' | 'Pending' | 'Approved' | 'Flagged') => {
     setExpenses((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status } : e))
+      prev.map((e) => {
+        if (e.id === id) {
+          const updated = { ...e, status };
+          LocalRepository.updateExpense(updated, user.id);
+          return updated;
+        }
+        return e;
+      })
     );
   };
 
   const handleToggleExpenseStatus = (id: string) => {
     setExpenses((prev) =>
-      prev.map((e) =>
-        e.id === id ? { ...e, status: e.status === 'Settled' ? 'Pending' : 'Settled' } : e
-      )
+      prev.map((e) => {
+        if (e.id === id) {
+          const nextStatus = (e.status === 'Completed' ? 'Pending' : 'Completed') as 'Completed' | 'Pending';
+          const updated = { ...e, status: nextStatus };
+          LocalRepository.updateExpense(updated, user.id);
+          return updated;
+        }
+        return e;
+      })
     );
   };
 
   const handleDeleteExpense = (id: string) => {
+    LocalRepository.deleteExpense(id, user.id);
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   };
 
@@ -742,7 +685,7 @@ export default function App() {
     const randCode = `${chars.charAt(Math.floor(Math.random() * 26))}${chars.charAt(Math.floor(Math.random() * 26))}${chars.charAt(Math.floor(Math.random() * 26))}-${chars.charAt(Math.floor(Math.random() * 26))}${chars.charAt(Math.floor(Math.random() * 26))}${chars.charAt(Math.floor(Math.random() * 26))}-${Math.floor(100 + Math.random() * 900)}`;
 
     const createdGroup: Group = {
-      id: `grp_${Date.now()}`,
+      id: generateEntityId('grp'),
       name: newGroupData.name,
       description: newGroupData.description,
       category: newGroupData.category,
@@ -764,6 +707,7 @@ export default function App() {
       ],
     };
 
+    LocalRepository.createGroup(createdGroup, user.id);
     setGroups((prev) => [createdGroup, ...prev]);
     setSelectedGroupId(createdGroup.id);
     setActiveTab('shared-groups');
@@ -793,10 +737,11 @@ export default function App() {
       return { success: false, message: `You are already a member of ${matchedGroup.name}.` };
     }
 
+    let updatedGroup: Group | undefined;
     setGroups((prev) =>
       prev.map((g) => {
         if (g.id === matchedGroup.id) {
-          return {
+          updatedGroup = {
             ...g,
             members: [
               ...g.members,
@@ -809,10 +754,15 @@ export default function App() {
               },
             ],
           };
+          return updatedGroup;
         }
         return g;
       })
     );
+
+    if (updatedGroup) {
+      LocalRepository.updateGroup(updatedGroup, user.id);
+    }
 
     setSelectedGroupId(matchedGroup.id);
     setActiveTab('shared-groups');
@@ -833,6 +783,7 @@ export default function App() {
 
   const handleDeleteGroup = (groupId: string) => {
     const targetGroup = groups.find((g) => g.id === groupId);
+    LocalRepository.deleteGroup(groupId, user.id);
     setGroups((prev) => prev.filter((g) => g.id !== groupId));
     if (selectedGroupId === groupId) {
       setSelectedGroupId(null);
@@ -850,27 +801,37 @@ export default function App() {
   };
 
   const handleRemoveMember = (groupId: string, memberId: string) => {
+    let updatedGroup: Group | undefined;
     setGroups((prev) =>
       prev.map((g) => {
         if (g.id === groupId) {
-          return {
+          updatedGroup = {
             ...g,
             members: g.members.filter((m) => m.id !== memberId),
           };
+          return updatedGroup;
         }
         return g;
       })
     );
+    if (updatedGroup) {
+      LocalRepository.updateGroup(updatedGroup, user.id);
+    }
   };
 
   const handleEditExpense = (updatedExpense: Expense) => {
-    setExpenses((prev) => prev.map((e) => (e.id === updatedExpense.id ? updatedExpense : e)));
+    const cleanExpense: Expense = {
+      ...updatedExpense,
+      amount: Math.round(Number(updatedExpense.amount) * 100) / 100,
+    };
+    LocalRepository.updateExpense(cleanExpense, user.id);
+    setExpenses((prev) => prev.map((e) => (e.id === cleanExpense.id ? cleanExpense : e)));
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: `Expense updated: "${updatedExpense.title}" (৳${updatedExpense.amount})`,
+        message: `Expense updated: "${cleanExpense.title}" (৳${cleanExpense.amount})`,
         source: 'expense-ledger',
       },
       ...prev,
@@ -878,9 +839,19 @@ export default function App() {
   };
 
   const handleAcceptSettlement = (settlementId: string) => {
+    let targetSettlement: Settlement | undefined;
     setSettlements((prev) =>
-      prev.map((s) => (s.id === settlementId ? { ...s, status: 'Accepted' } : s))
+      prev.map((s) => {
+        if (s.id === settlementId) {
+          targetSettlement = { ...s, status: 'Accepted' };
+          return targetSettlement;
+        }
+        return s;
+      })
     );
+    if (targetSettlement) {
+      LocalRepository.updateSettlement(targetSettlement, user.id);
+    }
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -894,9 +865,19 @@ export default function App() {
   };
 
   const handleRejectSettlement = (settlementId: string) => {
+    let targetSettlement: Settlement | undefined;
     setSettlements((prev) =>
-      prev.map((s) => (s.id === settlementId ? { ...s, status: 'Rejected' } : s))
+      prev.map((s) => {
+        if (s.id === settlementId) {
+          targetSettlement = { ...s, status: 'Rejected' };
+          return targetSettlement;
+        }
+        return s;
+      })
     );
+    if (targetSettlement) {
+      LocalRepository.updateSettlement(targetSettlement, user.id);
+    }
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -911,7 +892,7 @@ export default function App() {
 
   const handleSettleUp = (settlementData: Settlement | any) => {
     const matchedGroup = groups.find((g) => g.id === settlementData.groupId);
-
+    
     // Attempt to resolve payee member from group members list
     const payeeName = settlementData.payeeName || settlementData.toUserName || 'Recipient';
     const payeeMember = matchedGroup?.members.find(
@@ -928,14 +909,14 @@ export default function App() {
     );
 
     const newSettlement: Settlement = {
-      id: settlementData.id || `stl_${Date.now()}`,
+      id: settlementData.id || generateEntityId('stl'),
       groupId: settlementData.groupId || matchedGroup?.id || '',
       groupName: matchedGroup?.name || settlementData.groupName || 'Shared Squad',
       fromUserId: payerMember?.id || settlementData.fromUserId || user.id,
       fromUserName: payerMember?.name || payerName,
-      toUserId: payeeMember?.id || settlementData.toUserId || `user_payee_${Date.now()}`,
+      toUserId: payeeMember?.id || settlementData.toUserId || generateEntityId('usr'),
       toUserName: payeeMember?.name || payeeName,
-      amount: Number(settlementData.amount),
+      amount: Math.round(Number(settlementData.amount) * 100) / 100,
       currency: settlementData.currency || matchedGroup?.currency || 'BDT',
       paymentMethod: settlementData.paymentMethod || 'bKash',
       status: settlementData.status || 'Pending',
@@ -944,6 +925,7 @@ export default function App() {
       note: settlementData.note,
     };
 
+    LocalRepository.createSettlement(newSettlement, user.id);
     setSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
 
     setAuditLogs((prev) => [
@@ -972,17 +954,6 @@ export default function App() {
           }
         }}
       />
-    );
-  }
-
-  if (!isDataLoaded) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#09090b] text-[#fafafa]">
-        <div className="space-y-3 text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
-          <p className="text-sm text-[#a1a1aa]">Loading Tallix seed data...</p>
-        </div>
-      </div>
     );
   }
 
@@ -1141,7 +1112,7 @@ export default function App() {
           )}
 
           {activeTab === 'analytics' && (
-            <AnalyticsView expenses={userExpenses} categories={categories} />
+            <AnalyticsView expenses={userExpenses} categories={CATEGORIES} />
           )}
 
           {activeTab === 'ai-advisor' && <AIAssistantView expenses={userExpenses} />}
@@ -1159,6 +1130,7 @@ export default function App() {
               onToggleUserAICopilot={handleToggleUserAICopilot}
               onAddUser={handleAddUserByAdmin}
               currentUserId={user.id}
+              lang={lang}
             />
           )}
         </div>
@@ -1171,16 +1143,21 @@ export default function App() {
       <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        expenses={userExpenses}
-        groups={userGroups}
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setIsCommandPaletteOpen(false);
         }}
-        onSelectGroup={(groupId) => {
-          setSelectedGroupId(groupId);
-          setActiveTab('shared-groups');
+        onOpenNewTransaction={() => {
           setIsCommandPaletteOpen(false);
+          setIsNewTransactionOpen(true);
+        }}
+        onOpenNewGroup={() => {
+          setIsCommandPaletteOpen(false);
+          setIsNewGroupOpen(true);
+        }}
+        onOpenSettleUp={() => {
+          setIsCommandPaletteOpen(false);
+          setIsSettleUpOpen(true);
         }}
       />
 

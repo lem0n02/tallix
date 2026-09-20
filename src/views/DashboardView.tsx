@@ -55,26 +55,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const { t, formatCurrency, formatNumber, formatDate, toBengaliNumerals } = useLanguage();
 
   // Aggregated Stats
-  const totalExpensesAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const totalExpensesAmount = Math.round(expenses.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
 
   // Current Month Expenses
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
-  const monthlyExpensesAmount = expenses
+  const monthlyExpensesAmount = Math.round(expenses
     .filter((e) => {
       const d = new Date(e.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     })
-    .reduce((sum, exp) => sum + exp.amount, 0);
+    .reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
 
   // Personal Expenses
   const personalExpensesList = expenses.filter((e) => !e.isShared);
-  const personalExpensesAmount = personalExpensesList.reduce((sum, exp) => sum + exp.amount, 0);
+  const personalExpensesAmount = Math.round(personalExpensesList.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
 
   // Shared Expenses
   const sharedExpensesList = expenses.filter((e) => e.isShared);
-  const sharedExpensesAmount = sharedExpensesList.reduce((sum, exp) => sum + exp.amount, 0);
+  const sharedExpensesAmount = Math.round(sharedExpensesList.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
 
   let owedToYou = 0;
   let youOwe = 0;
@@ -91,6 +91,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       }
     }
   });
+  owedToYou = Math.round(owedToYou * 100) / 100;
+  youOwe = Math.round(youOwe * 100) / 100;
 
   // Filtered & Sorted Expenses
   const sortedExpenses = [...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

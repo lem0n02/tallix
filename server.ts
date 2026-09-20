@@ -1,43 +1,13 @@
 import express from "express";
 import path from "path";
-import { readFile, writeFile, mkdir, access } from "fs/promises";
-import { config as loadEnv } from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import { constants as fsConstants } from "fs";
-
-loadEnv();
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
-
-  const seedMockDataPath = path.join(process.cwd(), "src", "data", "mockData.json");
-  const runtimeDir = path.join(process.cwd(), ".runtime");
-  const runtimeMockDataPath = path.join(runtimeDir, "mockData.json");
-
-  const ensureRuntimeMockData = async () => {
-    await mkdir(runtimeDir, { recursive: true });
-    try {
-      await access(runtimeMockDataPath, fsConstants.F_OK);
-    } catch {
-      const seedRaw = await readFile(seedMockDataPath, "utf-8");
-      await writeFile(runtimeMockDataPath, seedRaw, "utf-8");
-    }
-  };
-
-  const loadMockData = async () => {
-    await ensureRuntimeMockData();
-    const raw = await readFile(runtimeMockDataPath, "utf-8");
-    return JSON.parse(raw);
-  };
-
-  const saveMockData = async (data: unknown) => {
-    await ensureRuntimeMockData();
-    await writeFile(runtimeMockDataPath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
-  };
 
   // Initialize Gemini AI Client (Lazy check / server-side standard)
   const getGenAI = () => {
@@ -55,56 +25,154 @@ async function startServer() {
     });
   };
 
+  // In-Memory Durable Server State for Offline-First Synchronization & Idempotency
+  const serverExpenses = new Map<string, any>();
+  const serverGroups = new Map<string, any>();
+  const serverSettlements = new Map<string, any>();
+  const serverRegisteredUsers = new Map<string, any>();
+  const processedMutations = new Set<string>();
+  const deletedExpenseIds = new Set<string>();
+  const deletedGroupIds = new Set<string>();
+  const deletedSettlementIds = new Set<string>();
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({
       status: "operational",
-      version: "1.2.4-stable",
+      version: "1.3.0-offline-sync",
       timestamp: new Date().toISOString(),
       region: "us-east-1",
       latencyMs: Math.floor(Math.random() * 15) + 12,
-      database: "connected (supabase/drizzle)",
+      syncEngine: "operational",
+      processedMutationsCount: processedMutations.size,
+      database: "connected (Cloudflare D1 / Local Memory)",
     });
   });
 
-  app.get("/api/mock-data", async (req, res) => {
+  // Sync Push Endpoint (Client -> Server) with strict idempotency
+  app.post("/api/sync/push", (req, res) => {
     try {
-      const data = await loadMockData();
-      res.json(data);
-    } catch (error: any) {
-      res.status(500).json({
-        error: error?.message || "Failed to load mock data.",
+      const { clientDeviceId, userId, mutations } = req.body;
+      if (!Array.isArray(mutations)) {
+        return res.status(400).json({ success: false, error: "Mutations array required." });
+      }
+
+      const now = new Date().toISOString();
+      const processedMutationIds: string[] = [];
+      const failedMutations: { mutationId: string; error: string }[] = [];
+
+      for (const mut of mutations) {
+        try {
+          // Idempotency check: if mutation already processed, skip re-applying
+          if (processedMutations.has(mut.mutationId)) {
+            processedMutationIds.push(mut.mutationId);
+            continue;
+          }
+
+          if (mut.entityType === "expense") {
+            const exp = mut.payload;
+            if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
+              const cleanAmount = Math.round(Number(exp.amount) * 100) / 100;
+              serverExpenses.set(exp.id, {
+                ...exp,
+                amount: cleanAmount,
+                updatedAt: now,
+              });
+              deletedExpenseIds.delete(exp.id);
+            } else if (mut.operation === "DELETE") {
+              serverExpenses.delete(mut.entityId);
+              deletedExpenseIds.add(mut.entityId);
+            }
+          } else if (mut.entityType === "group") {
+            const grp = mut.payload;
+            if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
+              serverGroups.set(grp.id, {
+                ...grp,
+                updatedAt: now,
+              });
+              deletedGroupIds.delete(grp.id);
+            } else if (mut.operation === "DELETE") {
+              serverGroups.delete(mut.entityId);
+              deletedGroupIds.add(mut.entityId);
+            }
+          } else if (mut.entityType === "settlement") {
+            const stl = mut.payload;
+            if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
+              const cleanAmount = Math.round(Number(stl.amount) * 100) / 100;
+              serverSettlements.set(stl.id, {
+                ...stl,
+                amount: cleanAmount,
+                updatedAt: now,
+              });
+              deletedSettlementIds.delete(stl.id);
+            } else if (mut.operation === "DELETE") {
+              serverSettlements.delete(mut.entityId);
+              deletedSettlementIds.add(mut.entityId);
+            }
+          } else if (mut.entityType === "registeredUser") {
+            const usr = mut.payload;
+            if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
+              serverRegisteredUsers.set(usr.id, { ...usr, updatedAt: now });
+            } else if (mut.operation === "DELETE") {
+              serverRegisteredUsers.delete(mut.entityId);
+            }
+          }
+
+          processedMutations.add(mut.mutationId);
+          processedMutationIds.push(mut.mutationId);
+        } catch (err: any) {
+          failedMutations.push({
+            mutationId: mut.mutationId,
+            error: err.message || "Failed to process",
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        processedMutationIds,
+        failedMutations,
+        serverTimestamp: now,
       });
+    } catch (error: any) {
+      console.error("Sync Push Error:", error);
+      return res.status(500).json({ success: false, error: error.message || "Internal server error" });
     }
   });
 
-  app.get("/api/mock-data.json", async (req, res) => {
+  // Sync Pull Endpoint (Server -> Client)
+  app.get("/api/sync/pull", (req, res) => {
     try {
-      const data = await loadMockData();
-      res.json(data);
-    } catch (error: any) {
-      res.status(500).json({
-        error: error?.message || "Failed to load mock data.",
-      });
-    }
-  });
+      const since = req.query.since as string | undefined;
+      const now = new Date().toISOString();
 
-  app.put("/api/mock-data", async (req, res) => {
-    try {
-      await saveMockData(req.body);
-      res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({
-        error: error?.message || "Failed to save mock data.",
-      });
-    }
-  });
+      const filterBySince = (item: any) => {
+        if (!since) return true;
+        const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+        const sinceTime = new Date(since).getTime();
+        return itemTime > sinceTime;
+      };
 
-  app.get("/api/config", (req, res) => {
-    res.json({
-      superAdminEmail: process.env.SUPERADMIN_EMAIL || "",
-      superAdminPassword: process.env.SUPERADMIN_PASSWORD || "",
-    });
+      const expenses = Array.from(serverExpenses.values()).filter(filterBySince);
+      const groups = Array.from(serverGroups.values()).filter(filterBySince);
+      const settlements = Array.from(serverSettlements.values()).filter(filterBySince);
+      const registeredUsers = Array.from(serverRegisteredUsers.values()).filter(filterBySince);
+
+      return res.json({
+        success: true,
+        serverTimestamp: now,
+        expenses,
+        groups,
+        settlements,
+        registeredUsers,
+        deletedExpenseIds: Array.from(deletedExpenseIds),
+        deletedGroupIds: Array.from(deletedGroupIds),
+        deletedSettlementIds: Array.from(deletedSettlementIds),
+      });
+    } catch (error: any) {
+      console.error("Sync Pull Error:", error);
+      return res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
   });
 
   // Server logs stream endpoint

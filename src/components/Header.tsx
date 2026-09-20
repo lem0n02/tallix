@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, ThemeMode, LanguageMode } from '../types';
 import { getTranslation } from '../i18n/translations';
+import { SyncStatusBadge } from './SyncStatusBadge';
 
 interface HeaderProps {
   onOpenNewTransaction: () => void;
@@ -96,6 +97,9 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Actions, Theme, Language & User Profile */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Offline Sync Status Badge */}
+        <SyncStatusBadge />
+
         {/* Latency Telemetry */}
         <div className="hidden lg:flex items-center gap-2 bg-[#18181b] border border-[#27272a] px-3 py-1 rounded-full">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>

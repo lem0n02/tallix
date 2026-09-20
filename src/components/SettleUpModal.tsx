@@ -23,7 +23,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
 }) => {
   const [groupId, setGroupId] = useState(defaultGroupId || groups[0]?.id || '');
   const [toMemberId, setToMemberId] = useState('');
-  const [amount, setAmount] = useState('100.00');
+  const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'bKash' | 'Nagad' | 'Bank Transfer' | 'Other'>('bKash');
   const [note, setNote] = useState('');
   const [proofUrl, setProofUrl] = useState<string | undefined>();
@@ -45,10 +45,28 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   const otherMembers = selectedGroup?.members.filter((m) => m.id !== currentUserId) || [];
   const targetMember = otherMembers.find((m) => m.id === toMemberId) || otherMembers[0];
 
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      setAmount('');
+      return;
+    }
+    // Only accept valid numeric values: digits and up to 2 decimal places if explicitly entered
+    // Reject letters and invalid characters immediately
+    const numericRegex = /^(\d+)?(\.\d{0,2})?$/;
+    if (numericRegex.test(val)) {
+      setAmount(val);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || parsedAmount <= 0) return;
+    const trimmedAmount = amount.trim();
+    const parsedAmount = Number(trimmedAmount);
+    if (trimmedAmount === '' || isNaN(parsedAmount) || parsedAmount <= 0) return;
+
+    // Preserve exact numeric value entered by user
+    const exactAmount = Math.round(parsedAmount * 100) / 100;
 
     const newSettlement: Settlement = {
       id: `stl_${Date.now()}`,
@@ -58,7 +76,7 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
       fromUserName: currentUserName,
       toUserId: targetMember?.id || 'usr_2',
       toUserName: targetMember?.name || 'Sarah Chen',
-      amount: parsedAmount,
+      amount: exactAmount,
       currency: selectedGroup.currency || 'BDT',
       paymentMethod,
       status: 'Pending',
@@ -160,11 +178,14 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
             <div className="relative">
               <span className="absolute left-3 top-2 text-[#71717a] text-sm">৳</span>
               <input
-                type="number"
-                step="0.01"
+                id="settlement-amount-input"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 required
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={handleAmountChange}
+                placeholder="0.00"
                 className="w-full bg-[#09090b] border border-[#27272a] rounded-lg pl-7 pr-3 py-2 text-sm text-[#fafafa] font-mono focus:outline-none focus:border-blue-500 placeholder-[#52525b]"
               />
             </div>

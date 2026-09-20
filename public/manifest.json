@@ -1,0 +1,18 @@
+{
+  "short_name": "Tallix",
+  "name": "Tallix - Financial Engine",
+  "description": "Production-grade offline-first expense management application for personal and group expenses.",
+  "icons": [
+    {
+      "src": "/src/assets/images/tallix_brand_app_logo_1785406274692.jpg",
+      "sizes": "192x192 512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}

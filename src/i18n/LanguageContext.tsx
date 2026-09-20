@@ -64,7 +64,7 @@ export const useLanguage = (): LanguageContextType => {
       toggleLang: () => {},
       t: (key: keyof typeof translations.en) => getTranslation('en', key),
       formatNumber: (val) => String(val ?? ''),
-      formatCurrency: (amount) => `৳${Number(amount).toFixed(2)}`,
+      formatCurrency: (amount) => formatCurrencyUtil(amount, 'en'),
       formatDate: (date) => String(date ?? ''),
       formatDateTime: (date) => String(date ?? ''),
       toBengaliNumerals: (str) => String(str ?? ''),

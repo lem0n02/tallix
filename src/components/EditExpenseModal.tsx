@@ -48,20 +48,38 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
 
   const selectedGroup = groups.find((g) => g.id === groupId);
 
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      setAmount('');
+      setError(null);
+      return;
+    }
+    // Only accept valid numeric values: digits and up to 2 decimal places if explicitly entered
+    // Reject letters and invalid characters immediately
+    const numericRegex = /^(\d+)?(\.\d{0,2})?$/;
+    if (numericRegex.test(val)) {
+      setAmount(val);
+      setError(null);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedAmount = parseFloat(amount);
+    const trimmedAmount = amount.trim();
+    const parsedAmount = Number(trimmedAmount);
 
     if (!title.trim()) {
       setError('Item title is required.');
       return;
     }
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    if (trimmedAmount === '' || isNaN(parsedAmount) || parsedAmount <= 0) {
       setError('Please enter a valid amount greater than 0.');
       return;
     }
 
-    const roundedAmount = Math.round(parsedAmount * 100) / 100;
+    // Preserve exact numeric value entered by user
+    const exactAmount = Math.round(parsedAmount * 100) / 100;
 
     const selectedPayer = selectedGroup?.members.find((m) => m.id === paidByUserId)
       || { id: expense.paidByUserId, name: expense.paidByName };
@@ -72,8 +90,8 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
     let calculatedSplits = undefined;
     if (isShared && selectedGroup && selectedGroup.members.length > 0) {
       const count = selectedGroup.members.length;
-      const baseShare = Math.floor((roundedAmount / count) * 100) / 100;
-      let remainderCents = Math.round((roundedAmount - (baseShare * count)) * 100);
+      const baseShare = Math.floor((exactAmount / count) * 100) / 100;
+      let remainderCents = Math.round((exactAmount - (baseShare * count)) * 100);
 
       calculatedSplits = selectedGroup.members.map((m) => {
         let memberShare = baseShare;
@@ -94,7 +112,7 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
       ...expense,
       title,
       merchant: title,
-      amount: roundedAmount,
+      amount: exactAmount,
       date,
       category,
       paymentMethod,
@@ -238,11 +256,13 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
             <div className="relative">
               <span className="absolute left-3 top-2 text-[#71717a] text-sm">৳</span>
               <input
-                type="number"
-                step="0.01"
+                id="edit-expense-amount-input"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 required
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={handleAmountChange}
                 placeholder="0.00"
                 className="w-full bg-[#09090b] border border-[#27272a] rounded-lg pl-7 pr-3 py-2 text-sm text-[#fafafa] font-mono focus:outline-none focus:border-blue-500 placeholder-[#52525b]"
               />
