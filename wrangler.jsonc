@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "tallix-db",
-      "database_id": "tallix-d1-production-binding",
+      "database_id": "e7bd3e3c-50f9-4efd-922c-4b9f5a6a8e99",
       "migrations_table": "d1_migrations",
       "migrations_dir": "migrations"
     }
