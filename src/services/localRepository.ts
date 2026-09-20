@@ -13,6 +13,7 @@ import {
 import { enqueueMutation } from './syncQueue';
 import { syncEngine } from './syncEngine';
 import { Expense, Group, Settlement, RegisteredUser, AuditLog, GuestVisit } from '../types';
+import { toPaisa, parseExactMoney } from '../utils/money';
 
 export class LocalRepository {
   // Initialize and migrate localStorage data into IndexedDB on first run
@@ -110,9 +111,13 @@ export class LocalRepository {
   }
 
   public static async createExpense(expense: Expense, userId: string): Promise<Expense> {
+    const exactAmount = parseExactMoney(expense.amount);
+    const origAmount = expense.originalAmount !== undefined ? parseExactMoney(expense.originalAmount) : exactAmount;
     const record: Expense = {
       ...expense,
-      amount: Math.round(Number(expense.amount) * 100) / 100,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
     };
 
     // Save locally first
@@ -136,9 +141,13 @@ export class LocalRepository {
   }
 
   public static async updateExpense(expense: Expense, userId: string): Promise<Expense> {
+    const exactAmount = parseExactMoney(expense.amount);
+    const origAmount = expense.originalAmount !== undefined ? parseExactMoney(expense.originalAmount) : exactAmount;
     const record: Expense = {
       ...expense,
-      amount: Math.round(Number(expense.amount) * 100) / 100,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
     };
 
     await idbPut(STORES.EXPENSES, record);
@@ -238,39 +247,57 @@ export class LocalRepository {
   }
 
   public static async createSettlement(settlement: Settlement, userId: string): Promise<Settlement> {
-    await idbPut(STORES.SETTLEMENTS, settlement);
+    const exactAmount = parseExactMoney(settlement.amount);
+    const origAmount = settlement.originalAmount !== undefined ? parseExactMoney(settlement.originalAmount) : exactAmount;
+    const record: Settlement = {
+      ...settlement,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
+    };
+
+    await idbPut(STORES.SETTLEMENTS, record);
 
     await enqueueMutation({
       entityType: 'settlement',
-      entityId: settlement.id,
+      entityId: record.id,
       operation: 'CREATE',
-      payload: settlement,
+      payload: record,
       userId,
-      groupId: settlement.groupId,
+      groupId: record.groupId,
     });
 
     await syncEngine.updatePendingCount();
     syncEngine.triggerSync().catch(console.warn);
 
-    return settlement;
+    return record;
   }
 
   public static async updateSettlement(settlement: Settlement, userId: string): Promise<Settlement> {
-    await idbPut(STORES.SETTLEMENTS, settlement);
+    const exactAmount = parseExactMoney(settlement.amount);
+    const origAmount = settlement.originalAmount !== undefined ? parseExactMoney(settlement.originalAmount) : exactAmount;
+    const record: Settlement = {
+      ...settlement,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
+    };
+
+    await idbPut(STORES.SETTLEMENTS, record);
 
     await enqueueMutation({
       entityType: 'settlement',
-      entityId: settlement.id,
+      entityId: record.id,
       operation: 'UPDATE',
-      payload: settlement,
+      payload: record,
       userId,
-      groupId: settlement.groupId,
+      groupId: record.groupId,
     });
 
     await syncEngine.updatePendingCount();
     syncEngine.triggerSync().catch(console.warn);
 
-    return settlement;
+    return record;
   }
 
   // --- Users & Logs ---

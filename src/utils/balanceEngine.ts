@@ -1,4 +1,5 @@
 import { Group, GroupMember, Expense, Settlement } from '../types';
+import { toPaisa, fromPaisa, splitExactAmount } from './money';
 
 export const isMemberMatch = (
   member: { id: string; name: string; email?: string },
@@ -41,53 +42,70 @@ export const calculateGroupMembersWithBalances = (
 
   const totalMembersCount = group.members.length;
 
+  // Map each expense to member split shares in exact paisa
+  const expenseSharesMap = new Map<string, Map<string, number>>();
+
+  groupExpenses.forEach((exp) => {
+    const memberShares = new Map<string, number>();
+
+    if (exp.splits && exp.splits.length > 0) {
+      // Splits exist: use each member's split amount in paisa
+      group.members.forEach((m) => {
+        const split = exp.splits?.find((sp) => isMemberMatch(m, sp.userId, sp.userName));
+        if (split) {
+          memberShares.set(m.id, toPaisa(split.amount));
+        } else {
+          memberShares.set(m.id, 0);
+        }
+      });
+    } else {
+      // Default equal split: distribute exact paisa so the sum equals exp in paisa exactly
+      const splitAmounts = splitExactAmount(exp.originalAmount ?? exp.amount, totalMembersCount);
+      group.members.forEach((m, idx) => {
+        memberShares.set(m.id, toPaisa(splitAmounts[idx]));
+      });
+    }
+
+    expenseSharesMap.set(exp.id, memberShares);
+  });
+
   return group.members.map((m) => {
-    let spentByM = 0;
-    let shareOfM = 0;
+    let spentPaisa = 0;
+    let sharePaisa = 0;
 
     groupExpenses.forEach((exp) => {
       // Did member m pay for this expense?
       if (isMemberMatch(m, exp.paidByUserId, exp.paidByName)) {
-        spentByM += exp.amount;
+        spentPaisa += toPaisa(exp.originalAmount ?? exp.amount);
       }
 
-      // Calculate member m's share of this expense
-      if (exp.splits && exp.splits.length > 0) {
-        const split = exp.splits.find((sp) => isMemberMatch(m, sp.userId, sp.userName));
-        if (split) {
-          shareOfM += split.amount;
-        } else {
-          shareOfM += exp.amount / totalMembersCount;
-        }
-      } else {
-        // Default split equally across all group members
-        shareOfM += exp.amount / totalMembersCount;
+      // Member m's share of this expense in paisa
+      const shares = expenseSharesMap.get(exp.id);
+      if (shares && shares.has(m.id)) {
+        sharePaisa += shares.get(m.id) || 0;
       }
     });
 
-    let settlementsSent = 0;
-    let settlementsReceived = 0;
+    let settlementsSentPaisa = 0;
+    let settlementsReceivedPaisa = 0;
 
     acceptedSettlements.forEach((stl) => {
+      const stlPaisa = toPaisa(stl.originalAmount ?? stl.amount);
       if (isMemberMatch(m, stl.fromUserId, stl.fromUserName)) {
-        settlementsSent += stl.amount;
+        settlementsSentPaisa += stlPaisa;
       }
       if (isMemberMatch(m, stl.toUserId, stl.toUserName)) {
-        settlementsReceived += stl.amount;
+        settlementsReceivedPaisa += stlPaisa;
       }
     });
 
-    let calculatedBalance = spentByM - shareOfM + settlementsSent - settlementsReceived;
-    calculatedBalance = Math.round(calculatedBalance * 100) / 100;
-    if (Math.abs(calculatedBalance) < 0.001) {
-      calculatedBalance = 0;
-    }
+    const calculatedBalancePaisa = spentPaisa - sharePaisa + settlementsSentPaisa - settlementsReceivedPaisa;
 
     return {
       ...m,
-      spent: Math.round(spentByM * 100) / 100,
-      share: Math.round(shareOfM * 100) / 100,
-      balance: calculatedBalance,
+      spent: fromPaisa(spentPaisa),
+      share: fromPaisa(sharePaisa),
+      balance: fromPaisa(calculatedBalancePaisa),
     };
   });
 };
@@ -100,17 +118,23 @@ export const enrichGroupsWithBalances = (
   return groups.map((g) => {
     const updatedMembers = calculateGroupMembersWithBalances(g, expenses, settlements);
     const groupExpenses = expenses.filter((e) => e.isShared && e.groupId === g.id);
-    const totalSpent = groupExpenses.reduce((sum, e) => sum + e.amount, 0);
+    let totalSpentPaisa = 0;
+    groupExpenses.forEach((e) => {
+      totalSpentPaisa += toPaisa(e.originalAmount ?? e.amount);
+    });
 
-    const unsettledAmount = updatedMembers
+    let unsettledPaisa = 0;
+    updatedMembers
       .filter((m) => m.balance > 0)
-      .reduce((sum, m) => sum + m.balance, 0);
+      .forEach((m) => {
+        unsettledPaisa += toPaisa(m.balance);
+      });
 
     return {
       ...g,
       members: updatedMembers,
-      totalSpent: Math.round(totalSpent * 100) / 100,
-      unsettledAmount: Math.round(unsettledAmount * 100) / 100,
+      totalSpent: fromPaisa(totalSpentPaisa),
+      unsettledAmount: fromPaisa(unsettledPaisa),
     };
   });
 };

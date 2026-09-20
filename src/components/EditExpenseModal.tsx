@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { Expense, Group, PaymentMethod } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
+import { toPaisa, parseExactMoney, splitExactAmount } from '../utils/money';
 
 interface EditExpenseModalProps {
   isOpen: boolean;
@@ -79,7 +80,8 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
     }
 
     // Preserve exact numeric value entered by user
-    const exactAmount = Math.round(parsedAmount * 100) / 100;
+    const exactAmount = parseExactMoney(trimmedAmount);
+    const exactPaisa = toPaisa(trimmedAmount);
 
     const selectedPayer = selectedGroup?.members.find((m) => m.id === paidByUserId)
       || { id: expense.paidByUserId, name: expense.paidByName };
@@ -90,22 +92,15 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
     let calculatedSplits = undefined;
     if (isShared && selectedGroup && selectedGroup.members.length > 0) {
       const count = selectedGroup.members.length;
-      const baseShare = Math.floor((exactAmount / count) * 100) / 100;
-      let remainderCents = Math.round((exactAmount - (baseShare * count)) * 100);
+      const splitShares = splitExactAmount(exactAmount, count);
 
-      calculatedSplits = selectedGroup.members.map((m) => {
-        let memberShare = baseShare;
-        if (remainderCents > 0) {
-          memberShare = Math.round((memberShare + 0.01) * 100) / 100;
-          remainderCents--;
-        }
-        return {
-          userId: m.id,
-          userName: m.name,
-          amount: memberShare,
-          settled: isMemberMatch(m, finalPaidByUserId, finalPaidByName),
-        };
-      });
+      calculatedSplits = selectedGroup.members.map((m, idx) => ({
+        userId: m.id,
+        userName: m.name,
+        amount: splitShares[idx],
+        amount_paisa: toPaisa(splitShares[idx]),
+        settled: isMemberMatch(m, finalPaidByUserId, finalPaidByName),
+      }));
     }
 
     const updatedExpense: Expense = {
@@ -113,6 +108,8 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
       title,
       merchant: title,
       amount: exactAmount,
+      originalAmount: exactAmount,
+      amount_paisa: exactPaisa,
       date,
       category,
       paymentMethod,

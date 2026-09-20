@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { Expense, Group, PaymentMethod, UserProfile } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
+import { toPaisa, parseExactMoney, splitExactAmount } from '../utils/money';
 import { useLanguage } from '../i18n/LanguageContext';
 
 interface NewTransactionModalProps {
@@ -90,7 +91,8 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     }
 
     // Preserve exact numeric value entered by user
-    const exactAmount = Math.round(parsedAmount * 100) / 100;
+    const exactAmount = parseExactMoney(trimmedAmount);
+    const exactPaisa = toPaisa(trimmedAmount);
 
     // Always automatically detect the currently authenticated (logged-in) user as the payer
     const loggedInUserMember = selectedGroup?.members.find((m) =>
@@ -103,28 +105,23 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     let calculatedSplits = undefined;
     if (isShared && selectedGroup && selectedGroup.members.length > 0) {
       const count = selectedGroup.members.length;
-      const baseShare = Math.floor((exactAmount / count) * 100) / 100;
-      let remainderCents = Math.round((exactAmount - (baseShare * count)) * 100);
+      const splitShares = splitExactAmount(exactAmount, count);
 
-      calculatedSplits = selectedGroup.members.map((m) => {
-        let memberShare = baseShare;
-        if (remainderCents > 0) {
-          memberShare = Math.round((memberShare + 0.01) * 100) / 100;
-          remainderCents--;
-        }
-        return {
-          userId: m.id,
-          userName: m.name,
-          amount: memberShare,
-          settled: isMemberMatch(m, finalPaidByUserId, finalPaidByName)
-        };
-      });
+      calculatedSplits = selectedGroup.members.map((m, idx) => ({
+        userId: m.id,
+        userName: m.name,
+        amount: splitShares[idx],
+        amount_paisa: toPaisa(splitShares[idx]),
+        settled: isMemberMatch(m, finalPaidByUserId, finalPaidByName)
+      }));
     }
 
     const newExpense: Omit<Expense, 'id'> = {
       title,
       merchant: title,
       amount: exactAmount,
+      originalAmount: exactAmount,
+      amount_paisa: exactPaisa,
       currency: 'BDT',
       date,
       category,

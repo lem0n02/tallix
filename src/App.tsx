@@ -33,31 +33,50 @@ import { EditExpenseModal } from './components/EditExpenseModal';
 import { LocalRepository } from './services/localRepository';
 import { generateEntityId } from './services/idGenerator';
 import { syncEngine } from './services/syncEngine';
+import { toPaisa, parseExactMoney, splitExactAmount } from './utils/money';
 
 export type AppRoute = 'landing' | 'signin' | 'signup' | 'forgot-password' | 'app';
 
 const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
   return rawExpenses.map((exp) => {
-    const cleanAmount = Math.round((exp.amount || 0) * 100) / 100;
+    const exactAmount = parseExactMoney(exp.originalAmount !== undefined ? exp.originalAmount : exp.amount);
+    const origAmount = exp.originalAmount !== undefined ? parseExactMoney(exp.originalAmount) : exactAmount;
+    const exactPaisa = toPaisa(origAmount);
+
     if (!exp.isShared || !exp.splits || exp.splits.length === 0) {
-      return { ...exp, amount: cleanAmount };
+      return {
+        ...exp,
+        amount: exactAmount,
+        originalAmount: origAmount,
+        amount_paisa: exactPaisa,
+      };
     }
-    const splitsSum = Math.round(exp.splits.reduce((s, sp) => s + sp.amount, 0) * 100) / 100;
-    if (Math.abs(splitsSum - cleanAmount) > 0.001) {
+
+    // Splits exist: verify exact sum in paisa
+    const splitsSumPaisa = exp.splits.reduce((s, sp) => s + toPaisa(sp.amount), 0);
+    if (splitsSumPaisa !== exactPaisa) {
       const count = exp.splits.length;
-      const baseShare = Math.floor((cleanAmount / count) * 100) / 100;
-      let remainderCents = Math.round((cleanAmount - (baseShare * count)) * 100);
-      const fixedSplits = exp.splits.map((sp) => {
-        let memberShare = baseShare;
-        if (remainderCents > 0) {
-          memberShare = Math.round((memberShare + 0.01) * 100) / 100;
-          remainderCents--;
-        }
-        return { ...sp, amount: memberShare };
-      });
-      return { ...exp, amount: cleanAmount, splits: fixedSplits };
+      const splitShares = splitExactAmount(exactAmount, count);
+      const fixedSplits = exp.splits.map((sp, idx) => ({
+        ...sp,
+        amount: splitShares[idx],
+        amount_paisa: toPaisa(splitShares[idx]),
+      }));
+      return {
+        ...exp,
+        amount: exactAmount,
+        originalAmount: origAmount,
+        amount_paisa: exactPaisa,
+        splits: fixedSplits,
+      };
     }
-    return { ...exp, amount: cleanAmount };
+
+    return {
+      ...exp,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: exactPaisa,
+    };
   });
 };
 
@@ -73,21 +92,38 @@ export default function App() {
     return (saved as LanguageMode) || 'en';
   });
 
-  // Apply theme to html element
+  // Apply theme to html element and document
   useEffect(() => {
     localStorage.setItem('tallix_theme', theme);
     const root = document.documentElement;
-    if (theme === 'light') {
-      root.classList.remove('dark');
-      root.classList.add('light');
-    } else if (theme === 'dark') {
-      root.classList.remove('light');
-      root.classList.add('dark');
-    } else {
-      // System mode check
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.remove('light', 'dark');
-      root.classList.add(systemDark ? 'dark' : 'light');
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyTheme = () => {
+      let isDark = false;
+      if (theme === 'dark') {
+        isDark = true;
+      } else if (theme === 'light') {
+        isDark = false;
+      } else {
+        isDark = mediaQuery.matches;
+      }
+
+      if (isDark) {
+        root.classList.remove('light');
+        root.classList.add('dark');
+        root.style.colorScheme = 'dark';
+      } else {
+        root.classList.remove('dark');
+        root.classList.add('light');
+        root.style.colorScheme = 'light';
+      }
+    };
+
+    applyTheme();
+
+    if (theme === 'system') {
+      mediaQuery.addEventListener('change', applyTheme);
+      return () => mediaQuery.removeEventListener('change', applyTheme);
     }
   }, [theme]);
 
@@ -631,12 +667,18 @@ export default function App() {
     const finalPaidByUserId = matchedPayer ? matchedPayer.id : user.id;
     const finalPaidByName = matchedPayer ? matchedPayer.name : user.name;
 
-    const exactAmount = Math.round(Number(newExpenseData.amount) * 100) / 100;
+    const exactAmount = parseExactMoney(newExpenseData.amount);
+    const origAmount = newExpenseData.originalAmount !== undefined
+      ? parseExactMoney(newExpenseData.originalAmount)
+      : exactAmount;
+    const exactPaisa = toPaisa(origAmount);
 
     const createdExpense: Expense = {
       id: generateEntityId('exp'),
       ...newExpenseData,
       amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: exactPaisa,
       isShared: !!newExpenseData.isShared,
       groupId: targetGroupId,
       groupName: newExpenseData.isShared ? (selectedGroup?.name || newExpenseData.groupName) : undefined,
@@ -855,9 +897,15 @@ export default function App() {
   };
 
   const handleEditExpense = (updatedExpense: Expense) => {
+    const exactAmount = parseExactMoney(updatedExpense.amount);
+    const origAmount = updatedExpense.originalAmount !== undefined
+      ? parseExactMoney(updatedExpense.originalAmount)
+      : exactAmount;
     const cleanExpense: Expense = {
       ...updatedExpense,
-      amount: Math.round(Number(updatedExpense.amount) * 100) / 100,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
     };
     LocalRepository.updateExpense(cleanExpense, user.id);
     setExpenses((prev) => prev.map((e) => (e.id === cleanExpense.id ? cleanExpense : e)));
@@ -943,6 +991,11 @@ export default function App() {
         isMemberMatch(m, undefined, payerName)
     );
 
+    const exactAmount = parseExactMoney(settlementData.amount);
+    const origAmount = settlementData.originalAmount !== undefined
+      ? parseExactMoney(settlementData.originalAmount)
+      : exactAmount;
+
     const newSettlement: Settlement = {
       id: settlementData.id || generateEntityId('stl'),
       groupId: settlementData.groupId || matchedGroup?.id || '',
@@ -951,7 +1004,9 @@ export default function App() {
       fromUserName: payerMember?.name || payerName,
       toUserId: payeeMember?.id || settlementData.toUserId || generateEntityId('usr'),
       toUserName: payeeMember?.name || payeeName,
-      amount: Math.round(Number(settlementData.amount) * 100) / 100,
+      amount: exactAmount,
+      originalAmount: origAmount,
+      amount_paisa: toPaisa(origAmount),
       currency: settlementData.currency || matchedGroup?.currency || 'BDT',
       paymentMethod: settlementData.paymentMethod || 'bKash',
       status: settlementData.status || 'Pending',

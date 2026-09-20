@@ -1,4 +1,5 @@
 import { LanguageMode } from '../types';
+import { formatExactMoney, toPaisa } from '../utils/money';
 
 export function toBengaliNumerals(strOrNum: string | number | null | undefined): string {
   if (strOrNum === null || strOrNum === undefined) return '';
@@ -29,18 +30,16 @@ export function formatNumber(
   return formattedEn;
 }
 
-export function formatCurrency(amount: number | string, lang: LanguageMode): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return lang === 'bn' ? '৳০.০০' : '৳0.00';
+export function formatCurrency(amount: number | string | null | undefined, lang: LanguageMode): string {
+  if (amount === null || amount === undefined || amount === '') {
+    return lang === 'bn' ? '৳০.০০' : '৳0.00';
+  }
 
-  const rounded = Math.round(num * 100) / 100;
-  const cleanNum = Math.abs(rounded) < 0.001 ? 0 : rounded;
-  const isNegative = cleanNum < 0;
-  const absNum = Math.abs(cleanNum);
-
-  const parts = absNum.toFixed(2).split('.');
-  const wholeFormatted = parseInt(parts[0], 10).toLocaleString('en-US');
-  const enResult = `${isNegative ? '-' : ''}৳${wholeFormatted}.${parts[1]}`;
+  const paisa = toPaisa(amount);
+  const formatted = formatExactMoney(amount);
+  const isNegative = paisa < 0;
+  const cleanFormatted = isNegative ? formatted.slice(1) : formatted;
+  const enResult = `${isNegative ? '-' : ''}৳${cleanFormatted}`;
 
   if (lang === 'bn') {
     return toBengaliNumerals(enResult);

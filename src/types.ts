@@ -7,6 +7,7 @@ export interface ExpenseSplit {
   userId: string;
   userName?: string;
   amount: number;
+  amount_paisa?: number;
   percentage?: number;
   settled: boolean;
 }
@@ -16,6 +17,8 @@ export interface Expense {
   title: string;
   merchant: string;
   amount: number;
+  originalAmount?: number;
+  amount_paisa?: number;
   currency: string;
   date: string;
   category: string;
@@ -69,6 +72,8 @@ export interface Settlement {
   toUserId: string;
   toUserName: string;
   amount: number;
+  originalAmount?: number;
+  amount_paisa?: number;
   currency: string;
   paymentMethod?: 'Cash' | 'bKash' | 'Nagad' | 'Bank Transfer' | 'Other' | string;
   status: 'Pending' | 'Accepted' | 'Rejected' | 'Completed' | 'Pending Approval';

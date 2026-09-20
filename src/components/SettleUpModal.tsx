@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Scale, Upload, Check } from 'lucide-react';
 import { Group, Settlement, UserProfile } from '../types';
+import { parseExactMoney, toPaisa } from '../utils/money';
 
 interface SettleUpModalProps {
   isOpen: boolean;
@@ -66,7 +67,8 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
     if (trimmedAmount === '' || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     // Preserve exact numeric value entered by user
-    const exactAmount = Math.round(parsedAmount * 100) / 100;
+    const exactAmount = parseExactMoney(trimmedAmount);
+    const exactPaisa = toPaisa(trimmedAmount);
 
     const newSettlement: Settlement = {
       id: `stl_${Date.now()}`,
@@ -77,6 +79,8 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
       toUserId: targetMember?.id || 'usr_2',
       toUserName: targetMember?.name || 'Sarah Chen',
       amount: exactAmount,
+      originalAmount: exactAmount,
+      amount_paisa: exactPaisa,
       currency: selectedGroup.currency || 'BDT',
       paymentMethod,
       status: 'Pending',

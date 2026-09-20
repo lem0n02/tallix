@@ -132,8 +132,17 @@ export default {
             if (mut.entityType === 'expense') {
               const exp = mut.payload;
               if (mut.operation === 'CREATE' || mut.operation === 'UPDATE') {
-                const amount = Math.round(Number(exp.amount) * 100) / 100;
-                const paisa = Math.round(amount * 100);
+                const orig = exp.originalAmount !== undefined ? exp.originalAmount : exp.amount;
+                const paisa = typeof exp.amount_paisa === 'number' && Number.isInteger(exp.amount_paisa)
+                  ? exp.amount_paisa
+                  : (() => {
+                      const s = String(orig || 0).trim();
+                      const parts = s.split('.');
+                      const whole = parseInt(parts[0].replace(/\D/g, '') || '0', 10);
+                      const frac = parseInt((parts[1] ? parts[1].replace(/\D/g, '') + '00' : '00').slice(0, 2), 10);
+                      return (s.startsWith('-') ? -1 : 1) * (whole * 100 + frac);
+                    })();
+                const amount = !isNaN(Number(orig)) ? Number(orig) : (paisa / 100);
 
                 await env.DB.prepare(`
                   INSERT INTO expenses (
@@ -242,8 +251,17 @@ export default {
             } else if (mut.entityType === 'settlement') {
               const stl = mut.payload;
               if (mut.operation === 'CREATE' || mut.operation === 'UPDATE') {
-                const amount = Math.round(Number(stl.amount) * 100) / 100;
-                const paisa = Math.round(amount * 100);
+                const orig = stl.originalAmount !== undefined ? stl.originalAmount : stl.amount;
+                const paisa = typeof stl.amount_paisa === 'number' && Number.isInteger(stl.amount_paisa)
+                  ? stl.amount_paisa
+                  : (() => {
+                      const s = String(orig || 0).trim();
+                      const parts = s.split('.');
+                      const whole = parseInt(parts[0].replace(/\D/g, '') || '0', 10);
+                      const frac = parseInt((parts[1] ? parts[1].replace(/\D/g, '') + '00' : '00').slice(0, 2), 10);
+                      return (s.startsWith('-') ? -1 : 1) * (whole * 100 + frac);
+                    })();
+                const amount = !isNaN(Number(orig)) ? Number(orig) : (paisa / 100);
 
                 await env.DB.prepare(`
                   INSERT INTO settlements (

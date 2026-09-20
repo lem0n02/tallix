@@ -72,10 +72,13 @@ async function startServer() {
           if (mut.entityType === "expense") {
             const exp = mut.payload;
             if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
-              const cleanAmount = Math.round(Number(exp.amount) * 100) / 100;
+              const origAmount = exp.originalAmount !== undefined ? Number(exp.originalAmount) : Number(exp.amount);
+              const paisa = typeof exp.amount_paisa === "number" ? exp.amount_paisa : Math.round(origAmount * 100);
               serverExpenses.set(exp.id, {
                 ...exp,
-                amount: cleanAmount,
+                amount: origAmount,
+                originalAmount: origAmount,
+                amount_paisa: paisa,
                 updatedAt: now,
               });
               deletedExpenseIds.delete(exp.id);
@@ -98,10 +101,13 @@ async function startServer() {
           } else if (mut.entityType === "settlement") {
             const stl = mut.payload;
             if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
-              const cleanAmount = Math.round(Number(stl.amount) * 100) / 100;
+              const origAmount = stl.originalAmount !== undefined ? Number(stl.originalAmount) : Number(stl.amount);
+              const paisa = typeof stl.amount_paisa === "number" ? stl.amount_paisa : Math.round(origAmount * 100);
               serverSettlements.set(stl.id, {
                 ...stl,
-                amount: cleanAmount,
+                amount: origAmount,
+                originalAmount: origAmount,
+                amount_paisa: paisa,
                 updatedAt: now,
               });
               deletedSettlementIds.delete(stl.id);
