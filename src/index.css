@@ -1,155 +1,91 @@
 @import "tailwindcss";
 
 /* 
- * Global Theme Architecture: High-Contrast Dark & Light Mode System
- * Guarantees 100% theme coverage across pages, forms, tables, modals, and charts.
+ * Global Theme Architecture: Complete Dark-Only UI System
+ * Consistent high-contrast dark design language across all pages, components, and controls.
  */
 
 :root {
   color-scheme: dark;
+
+  /* Centralized Dark-Only Color Palette */
+  --background: #09090b;
+  --background-subtle: #0d0d10;
+  --surface: #121215;
+  --surface-card: #18181b;
+  --surface-elevated: #1c1c21;
+  --surface-hover: #27272a;
+
+  --border: #27272a;
+  --border-subtle: #1f1f23;
+  --border-hover: #3f3f46;
+  --border-focus: #10b981;
+
+  --foreground: #fafafa;
+  --foreground-secondary: #a1a1aa;
+  --foreground-muted: #71717a;
+  --foreground-disabled: #52525b;
+
+  --input-bg: #09090b;
+  --input-border: #27272a;
+  --input-placeholder: #52525b;
+
+  --primary: #10b981;
+  --primary-hover: #059669;
+  --primary-text: #ffffff;
+
+  --success: #34d399;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --info: #60a5fa;
 }
 
-html.dark {
+html, body {
+  background-color: #09090b;
+  color: #fafafa;
   color-scheme: dark;
-  background-color: #09090b;
-  color: #fafafa;
 }
 
-html.dark body {
-  background-color: #09090b;
-  color: #fafafa;
-}
-
-html.light {
-  color-scheme: light;
-  background-color: #f8fafc;
-  color: #09090b;
-}
-
-html.light body {
-  background-color: #f8fafc;
-  color: #09090b;
-}
-
-/* Ensure native form controls respect dark/light theme */
-html.dark select option {
+/* Ensure native form controls respect dark-only theme */
+select option {
   background-color: #18181b;
   color: #fafafa;
 }
 
-html.light select option {
-  background-color: #ffffff;
-  color: #09090b;
-}
-
-html.dark input[type="date"]::-webkit-calendar-picker-indicator,
-html.dark input[type="time"]::-webkit-calendar-picker-indicator {
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
   cursor: pointer;
 }
 
-html.light input[type="date"]::-webkit-calendar-picker-indicator,
-html.light input[type="time"]::-webkit-calendar-picker-indicator {
-  filter: none;
-  cursor: pointer;
-}
-
 /* Dark mode custom scrollbars */
-html.dark ::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-html.dark ::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: #09090b;
 }
-html.dark ::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: #27272a;
   border-radius: 9999px;
 }
-html.dark ::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }
 
-/* Light mode custom scrollbars */
-html.light ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
 }
-html.light ::-webkit-scrollbar-track {
-  background: #f8fafc;
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
-html.light ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
 }
-html.light ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Light mode palette overrides for dark-coded utility classes */
-html.light .bg-\[\#09090b\] {
-  background-color: #f8fafc !important;
-}
-html.light .bg-\[\#121215\] {
-  background-color: #ffffff !important;
-}
-html.light .bg-\[\#141417\] {
-  background-color: #f1f5f9 !important;
-}
-html.light .bg-\[\#18181b\] {
-  background-color: #ffffff !important;
-}
-html.light .bg-\[\#1c1c1f\],
-html.light .bg-\[\#1c1c21\] {
-  background-color: #f8fafc !important;
-}
-html.light .bg-\[\#27272a\] {
-  background-color: #e2e8f0 !important;
-}
-html.light .bg-\[\#27272a\]\/50 {
-  background-color: #f1f5f9 !important;
-}
-html.light .bg-\[\#27272a\]\/30 {
-  background-color: #f8fafc !important;
-}
-html.light .text-\[\#fafafa\] {
-  color: #09090b !important;
-}
-html.light .text-\[\#e4e4e7\] {
-  color: #18181b !important;
-}
-html.light .text-\[\#a1a1aa\] {
-  color: #475569 !important;
-}
-html.light .text-\[\#71717a\] {
-  color: #64748b !important;
-}
-html.light .text-\[\#52525b\] {
-  color: #94a3b8 !important;
-}
-html.light .placeholder-\[\#52525b\]::placeholder {
-  color: #94a3b8 !important;
-}
-html.light .placeholder-\[\#71717a\]::placeholder {
-  color: #94a3b8 !important;
-}
-html.light .border-\[\#27272a\],
-html.light .border-\[\#232328\],
-html.light .border-\[\#1c1c21\],
-html.light .border-\[\#2d2d35\] {
-  border-color: #e2e8f0 !important;
-}
-html.light .hover\:bg-\[\#27272a\]:hover {
-  background-color: #f1f5f9 !important;
-}
-html.light .hover\:bg-\[\#1c1c21\]:hover {
-  background-color: #f8fafc !important;
-}
-html.light .hover\:bg-white\/5:hover {
-  background-color: #f1f5f9 !important;
-}
-html.light .hover\:text-white:hover {
-  color: #09090b !important;
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
 
 @layer utilities {

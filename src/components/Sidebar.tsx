@@ -12,12 +12,9 @@ import {
   User,
   LogOut,
   Edit3,
-  Sun,
-  Moon,
-  Monitor,
   Globe
 } from 'lucide-react';
-import { UserProfile, Group, ThemeMode, LanguageMode } from '../types';
+import { UserProfile, Group, LanguageMode } from '../types';
 import { getTranslation } from '../i18n/translations';
 import tallixLogo from '../assets/images/tallix_brand_app_logo_1785406274692.jpg';
 
@@ -42,8 +39,6 @@ interface SidebarProps {
   onLogout: () => void;
   isMobileMenuOpen?: boolean;
   onCloseMobileMenu?: () => void;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
   lang: LanguageMode;
   onLangChange: (lang: LanguageMode) => void;
 }
@@ -60,8 +55,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   isMobileMenuOpen = false,
   onCloseMobileMenu,
-  theme,
-  onThemeChange,
   lang,
   onLangChange,
 }) => {
@@ -240,38 +233,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Controls & User Card */}
       <div className="p-4 border-t border-[#27272a] space-y-3">
-        {/* Quick Theme & Lang Controls */}
-        <div className="flex items-center justify-between gap-2 bg-[#18181b] border border-[#27272a] p-1.5 rounded-xl text-xs">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => onThemeChange('light')}
-              className={`p-1 rounded-lg transition-colors cursor-pointer ${theme === 'light' ? 'bg-[#27272a] text-amber-400 font-bold' : 'text-[#71717a]'}`}
-              title="Light Theme"
-            >
-              <Sun className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onThemeChange('dark')}
-              className={`p-1 rounded-lg transition-colors cursor-pointer ${theme === 'dark' ? 'bg-[#27272a] text-blue-400 font-bold' : 'text-[#71717a]'}`}
-              title="Dark Theme"
-            >
-              <Moon className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onThemeChange('system')}
-              className={`p-1 rounded-lg transition-colors cursor-pointer ${theme === 'system' ? 'bg-[#27272a] text-emerald-400 font-bold' : 'text-[#71717a]'}`}
-              title="System Theme"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
+        {/* Language Selector */}
+        <div className="flex items-center justify-between bg-[#18181b] border border-[#27272a] px-3 py-2 rounded-xl text-xs">
+          <span className="text-[11px] font-medium text-[#a1a1aa] flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{t('language')}</span>
+          </span>
           <button
             onClick={() => onLangChange(lang === 'en' ? 'bn' : 'en')}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-[11px] font-bold cursor-pointer transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-[11px] font-bold cursor-pointer transition-colors"
           >
-            <Globe className="w-3 h-3 text-emerald-400" />
-            <span>{lang === 'en' ? 'EN' : 'বাংলা'}</span>
+            <span>{lang === 'en' ? 'English (EN)' : 'বাংলা (BN)'}</span>
           </button>
         </div>
 

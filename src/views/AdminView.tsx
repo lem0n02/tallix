@@ -24,10 +24,13 @@ import {
   Monitor,
   Smartphone,
   Cpu,
-  Clock
+  Clock,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { RegisteredUser, Group, Expense, AuditLog, GuestVisit } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
+import { fetchAdminUsersFromD1, registerUserToCloudflareD1 } from '../services/authService';
 
 interface AdminViewProps {
   registeredUsers: RegisteredUser[];
@@ -40,6 +43,7 @@ interface AdminViewProps {
   onChangeUserRole: (userId: string, newRole: 'Admin' | 'User') => void;
   onToggleUserAICopilot?: (userId: string) => void;
   onAddUser: (user: RegisteredUser) => void;
+  onRefreshUsers?: (users: RegisteredUser[]) => void;
   currentUserId: string;
 }
 
@@ -54,6 +58,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onChangeUserRole,
   onToggleUserAICopilot,
   onAddUser,
+  onRefreshUsers,
   currentUserId,
 }) => {
   const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'guests' | 'squads' | 'logs'>('users');
@@ -63,6 +68,41 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(true);
 
+  // Authoritative D1 Users state
+  const [d1Users, setD1Users] = useState<RegisteredUser[]>(registeredUsers);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+
+  // Synchronize with incoming prop when prop changes
+  React.useEffect(() => {
+    if (registeredUsers && registeredUsers.length > 0) {
+      setD1Users(registeredUsers);
+    }
+  }, [registeredUsers]);
+
+  // Load authoritative users from Cloudflare D1
+  const loadAuthoritativeUsers = React.useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const fetched = await fetchAdminUsersFromD1();
+      if (Array.isArray(fetched) && fetched.length > 0) {
+        setD1Users(fetched);
+        if (onRefreshUsers) {
+          onRefreshUsers(fetched);
+        }
+      }
+      setLastRefreshedAt(new Date());
+    } catch (err) {
+      console.warn('[AdminView] Failed to retrieve authoritative users from D1:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [onRefreshUsers]);
+
+  React.useEffect(() => {
+    loadAuthoritativeUsers();
+  }, [loadAuthoritativeUsers]);
+
   const { t, formatNumber, formatDate } = useLanguage();
 
   // New User Form State
@@ -70,18 +110,19 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'User' | 'Admin'>('User');
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Metrics
-  const totalUsersCount = registeredUsers.length;
-  const activeUsersCount = registeredUsers.filter((u) => u.status === 'Active').length;
-  const disabledUsersCount = registeredUsers.filter((u) => u.status === 'Disabled').length;
+  // Metrics (Authoritative from D1 / Cached)
+  const totalUsersCount = d1Users.length;
+  const activeUsersCount = d1Users.filter((u) => u.status === 'Active').length;
+  const disabledUsersCount = d1Users.filter((u) => u.status === 'Disabled').length;
   const totalSquadsCount = groups.length;
   const totalSystemTransactionsCount = expenses.length;
   const totalGuestsCount = guestVisits.length;
 
   // Filtered Users
-  const filteredUsers = registeredUsers.filter((u) => {
+  const filteredUsers = d1Users.filter((u) => {
     const matchesSearch =
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -112,27 +153,38 @@ export const AdminView: React.FC<AdminViewProps> = ({
       return;
     }
 
-    if (registeredUsers.some((u) => u.email.toLowerCase() === newUserEmail.trim().toLowerCase())) {
+    if (d1Users.some((u) => u.email.toLowerCase() === newUserEmail.trim().toLowerCase())) {
       setFormError('An account with this email address already exists');
       return;
     }
 
-    const newUserObj: RegisteredUser = {
-      id: `usr_admin_created_${Date.now()}`,
+    setIsSubmittingUser(true);
+    setFormError(null);
+
+    const generatedId = `usr_admin_created_${Date.now()}`;
+
+    registerUserToCloudflareD1({
+      id: generatedId,
       name: newUserName.trim(),
       email: newUserEmail.trim().toLowerCase(),
       password: newUserPassword || undefined,
       systemRole: newUserRole,
-      createdAt: new Date().toISOString().split('T')[0],
       status: 'Active',
-      aiCopilotEnabled: true,
-    };
-
-    onAddUser(newUserObj);
-    setIsAddUserModalOpen(false);
-    setNewUserName('');
-    setNewUserEmail('');
-    setFormError(null);
+    })
+      .then((res) => {
+        setIsSubmittingUser(false);
+        onAddUser(res.user);
+        setD1Users((prev) => [res.user, ...prev.filter((u) => u.id !== res.user.id)]);
+        setIsAddUserModalOpen(false);
+        setNewUserName('');
+        setNewUserEmail('');
+        setNewUserPassword('');
+        setFormError(null);
+      })
+      .catch((err) => {
+        setIsSubmittingUser(false);
+        setFormError(err?.message || 'Failed to create user in Cloudflare D1.');
+      });
   };
 
   const confirmDelete = () => {
@@ -256,7 +308,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
             }`}
         >
           <Users className="w-4 h-4" />
-          <span>Registered Users ({registeredUsers.length})</span>
+          <span>Registered Users ({d1Users.length})</span>
         </button>
 
         <button
@@ -298,15 +350,37 @@ export const AdminView: React.FC<AdminViewProps> = ({
         <div className="bg-[#18181b] border border-[#27272a] rounded-2xl p-5 space-y-4 shadow-xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-4">
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-400" /> User Access & AI Copilot Control
-              </h2>
-              <p className="text-xs text-[#71717a]">
-                Manage user system roles, enable/disable status, and toggle AI Copilot access per user.
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-400" /> User Access & AI Copilot Control
+                </h2>
+                <span className="text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Database className="w-3 h-3 text-blue-400" /> Authoritative: Cloudflare D1
+                </span>
+                {lastRefreshedAt && (
+                  <span className="text-[10px] text-[#71717a] hidden md:inline">
+                    Synced {lastRefreshedAt.toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#71717a] mt-0.5">
+                Authoritative user registry from Cloudflare D1. Manage system roles, enable/disable status, and AI access.
               </p>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Refresh D1 Users Button */}
+              <button
+                type="button"
+                onClick={() => loadAuthoritativeUsers()}
+                disabled={isRefreshing}
+                title="Fetch latest registered users from Cloudflare D1"
+                className="bg-[#09090b] hover:bg-[#27272a] text-[#fafafa] border border-[#27272a] rounded-xl px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="text-[11px] font-medium hidden sm:inline">Refresh D1</span>
+              </button>
+
               {/* Search Bar */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#71717a]" />
@@ -315,7 +389,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search name or email..."
-                  className="bg-[#09090b] border border-[#27272a] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#fafafa] placeholder-[#52525b] focus:outline-none focus:border-emerald-500 w-48 sm:w-64"
+                  className="bg-[#09090b] border border-[#27272a] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#fafafa] placeholder-[#52525b] focus:outline-none focus:border-emerald-500 w-40 sm:w-56"
                 />
               </div>
 

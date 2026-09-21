@@ -22,12 +22,16 @@ export function getDatabase(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
+    const idb = (typeof globalThis !== 'undefined' && globalThis.indexedDB)
+      ? globalThis.indexedDB
+      : (typeof window !== 'undefined' ? window.indexedDB : null);
+
+    if (!idb) {
       reject(new Error('IndexedDB is not supported in this environment'));
       return;
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = idb.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;

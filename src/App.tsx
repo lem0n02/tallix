@@ -8,7 +8,7 @@ import {
   CATEGORIES,
   INITIAL_AUDIT_LOGS,
 } from './data/mockData';
-import { Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, ThemeMode, LanguageMode, GuestVisit } from './types';
+import { Expense, Group, Settlement, UserProfile, AuditLog, RegisteredUser, LanguageMode, GuestVisit } from './types';
 import { enrichGroupsWithBalances, isMemberMatch } from './utils/balanceEngine';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -81,51 +81,22 @@ const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
 };
 
 export default function App() {
-  // Theme & Language Global State
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem('tallix_theme');
-    return (saved as ThemeMode) || 'dark';
-  });
-
+  // Language Global State
   const [lang, setLang] = useState<LanguageMode>(() => {
     const saved = localStorage.getItem('tallix_lang');
     return (saved as LanguageMode) || 'en';
   });
 
-  // Apply theme to html element and document
+  // Enforce 100% Dark Mode Only
   useEffect(() => {
-    localStorage.setItem('tallix_theme', theme);
+    try {
+      localStorage.removeItem('tallix_theme');
+    } catch (e) {}
     const root = document.documentElement;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-    const applyTheme = () => {
-      let isDark = false;
-      if (theme === 'dark') {
-        isDark = true;
-      } else if (theme === 'light') {
-        isDark = false;
-      } else {
-        isDark = mediaQuery.matches;
-      }
-
-      if (isDark) {
-        root.classList.remove('light');
-        root.classList.add('dark');
-        root.style.colorScheme = 'dark';
-      } else {
-        root.classList.remove('dark');
-        root.classList.add('light');
-        root.style.colorScheme = 'light';
-      }
-    };
-
-    applyTheme();
-
-    if (theme === 'system') {
-      mediaQuery.addEventListener('change', applyTheme);
-      return () => mediaQuery.removeEventListener('change', applyTheme);
-    }
-  }, [theme]);
+    root.classList.remove('light');
+    root.classList.add('dark');
+    root.style.colorScheme = 'dark';
+  }, []);
 
   // Apply lang to local storage
   useEffect(() => {
@@ -1108,8 +1079,6 @@ export default function App() {
         onLogout={handleLogout}
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
-        theme={theme}
-        onThemeChange={setTheme}
         lang={lang}
         onLangChange={setLang}
       />
@@ -1126,8 +1095,6 @@ export default function App() {
             onLogout={handleLogout}
             isMobileMenuOpen={isMobileMenuOpen}
             onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            theme={theme}
-            onThemeChange={setTheme}
             lang={lang}
             onLangChange={setLang}
             onOpenGuestModal={() => setIsGuestModalOpen(true)}
@@ -1219,6 +1186,7 @@ export default function App() {
               onChangeUserRole={handleChangeUserRole}
               onToggleUserAICopilot={handleToggleUserAICopilot}
               onAddUser={handleAddUserByAdmin}
+              onRefreshUsers={(users) => setRegisteredUsers(users)}
               currentUserId={user.id}
               lang={lang}
             />

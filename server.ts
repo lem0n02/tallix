@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
@@ -8,6 +9,17 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
+
+  // CORS Middleware
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Device-Id, X-Admin-Email");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
 
   // Initialize Gemini AI Client (Lazy check / server-side standard)
   const getGenAI = () => {
@@ -47,6 +59,142 @@ async function startServer() {
       processedMutationsCount: processedMutations.size,
       database: "connected (Cloudflare D1 / Local Memory)",
     });
+  });
+
+  // User Registration Endpoint: POST /api/auth/register
+  app.post("/api/auth/register", (req, res) => {
+    try {
+      const { name, email, password, roleTitle, department, avatarGradient, systemRole, status, id } = req.body || {};
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ success: false, error: "Full name is required." });
+      }
+
+      if (!email || typeof email !== "string" || !email.trim()) {
+        return res.status(400).json({ success: false, error: "Email address is required." });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      if (!/\S+@\S+\.\S+/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: "A valid email address is required." });
+      }
+
+      // Check for duplicate account
+      for (const existing of serverRegisteredUsers.values()) {
+        if (existing.email && existing.email.toLowerCase() === cleanEmail) {
+          return res.status(409).json({
+            success: false,
+            error: "This email is already registered. Please sign in instead.",
+          });
+        }
+      }
+
+      const now = new Date().toISOString();
+      const userId = id && typeof id === "string" && id.trim()
+        ? id.trim()
+        : `usr_reg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      // Hash password using sha256 - never store plaintext
+      const passwordHash = password
+        ? crypto.createHash("sha256").update(password).digest("hex")
+        : null;
+
+      const userStatus = status === "Disabled" ? "Disabled" : "Active";
+      const userRoleTitle = roleTitle || "Financial Member";
+      const userDept = department || "Personal Workspace";
+      const userGradient = avatarGradient || "from-blue-600 to-indigo-600";
+      const userSystemRole = systemRole === "Admin" ? "Admin" : "User";
+
+      const newUser = {
+        id: userId,
+        name: name.trim(),
+        email: cleanEmail,
+        passwordHash,
+        systemRole: userSystemRole,
+        role: "User Member",
+        roleTitle: userRoleTitle,
+        title: userRoleTitle,
+        department: userDept,
+        avatarGradient: userGradient,
+        status: userStatus,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      serverRegisteredUsers.set(userId, newUser);
+
+      // Return sanitized user without password/hash
+      const { passwordHash: _, ...sanitizedUser } = newUser;
+      return res.status(201).json({
+        success: true,
+        user: sanitizedUser,
+      });
+    } catch (err: any) {
+      console.error("Register Error:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Failed to complete registration." });
+    }
+  });
+
+  // Admin Users Endpoint: GET /api/admin/users
+  app.get("/api/admin/users", (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const adminEmail = ((req.headers["x-admin-email"] as string) || "").trim().toLowerCase();
+
+      const isFixedAdmin =
+        authHeader === "Bearer Admin@Tallix2026!" ||
+        authHeader.includes("Admin@Tallix2026!") ||
+        (adminEmail === "abdulatiflemon@gmail.com" && authHeader.length > 5);
+
+      if (!isFixedAdmin) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Administrative credentials required." });
+      }
+
+      const sanitizedUsers = Array.from(serverRegisteredUsers.values()).map((user) => {
+        const { passwordHash: _, password: __, ...sanitized } = user;
+        return {
+          id: sanitized.id,
+          name: sanitized.name,
+          email: sanitized.email,
+          systemRole: sanitized.systemRole || "User",
+          role: sanitized.role || "User Member",
+          roleTitle: sanitized.roleTitle || sanitized.title || "Financial Member",
+          title: sanitized.title || sanitized.roleTitle || "Financial Member",
+          department: sanitized.department || "Personal Workspace",
+          avatarGradient: sanitized.avatarGradient || "from-blue-600 to-indigo-600",
+          status: sanitized.status || "Active",
+          createdAt: sanitized.createdAt,
+          updatedAt: sanitized.updatedAt || sanitized.createdAt,
+        };
+      });
+
+      return res.json({
+        success: true,
+        source: "Server Registry",
+        count: sanitizedUsers.length,
+        users: sanitizedUsers,
+      });
+    } catch (err: any) {
+      console.error("Admin Users Error:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Failed to retrieve admin users." });
+    }
+  });
+
+  // Admin DB Verification Endpoint: GET /api/admin/db-verify
+  app.get("/api/admin/db-verify", (req, res) => {
+    try {
+      const allUsers = Array.from(serverRegisteredUsers.values());
+      const recent = allUsers.slice(-5).map(({ passwordHash: _, password: __, ...u }) => u);
+      return res.json({
+        success: true,
+        database: "D1/Server Store",
+        totalUsers: allUsers.length,
+        recentUsers: recent,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message });
+    }
   });
 
   // Sync Push Endpoint (Client -> Server) with strict idempotency
@@ -118,7 +266,15 @@ async function startServer() {
           } else if (mut.entityType === "registeredUser") {
             const usr = mut.payload;
             if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
-              serverRegisteredUsers.set(usr.id, { ...usr, updatedAt: now });
+              const pwdHash = usr.passwordHash || (usr.password ? crypto.createHash("sha256").update(usr.password).digest("hex") : null);
+              const { password: _, ...cleanPayload } = usr;
+              serverRegisteredUsers.set(usr.id, {
+                ...cleanPayload,
+                passwordHash: pwdHash,
+                status: usr.status === "Disabled" ? "Disabled" : "Active",
+                roleTitle: usr.roleTitle || usr.title || "Financial Member",
+                updatedAt: now,
+              });
             } else if (mut.operation === "DELETE") {
               serverRegisteredUsers.delete(mut.entityId);
             }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark" style="color-scheme: dark;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,26 +10,12 @@
     <link rel="icon" type="image/jpg" href="/src/assets/images/tallix_brand_app_logo_1785406274692.jpg" />
     <link rel="apple-touch-icon" href="/src/assets/images/tallix_brand_app_logo_1785406274692.jpg" />
     <script>
-      (function() {
-        try {
-          var saved = localStorage.getItem('tallix_theme');
-          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var isDark = saved === 'dark' || (!saved && true) || (saved === 'system' && prefersDark);
-          var root = document.documentElement;
-          if (isDark) {
-            root.classList.remove('light');
-            root.classList.add('dark');
-            root.style.colorScheme = 'dark';
-          } else {
-            root.classList.remove('dark');
-            root.classList.add('light');
-            root.style.colorScheme = 'light';
-          }
-        } catch (e) {}
-      })();
+      try {
+        localStorage.removeItem('tallix_theme');
+      } catch (e) {}
     </script>
   </head>
-  <body>
+  <body class="bg-[#09090b] text-[#fafafa] antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

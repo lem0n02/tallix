@@ -82,7 +82,6 @@ export interface Settlement {
   note?: string;
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system';
 export type LanguageMode = 'en' | 'bn';
 
 export interface GuestVisit {
@@ -140,6 +139,7 @@ export interface RegisteredUser {
   status: 'Active' | 'Disabled';
   aiCopilotEnabled?: boolean;
   isVerified?: boolean;
+  updatedAt?: string;
 }
 
 export interface CategoryItem {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, ArrowRight, KeyRound, CheckCircle2, AlertCircle, Mail } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
+import { registerUserToCloudflareD1 } from '../../services/authService';
 
 interface SignUpViewProps {
   onBackToHome?: () => void;
@@ -139,44 +140,50 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     }
 
     setLoading(true);
+    setOtpError('');
 
-    setTimeout(() => {
-      const cleanEmail = email.trim().toLowerCase();
-      const newRegUser: RegisteredUser = {
-        id: `usr_reg_${Date.now()}`,
-        name: fullName.trim(),
-        email: cleanEmail,
-        password: password,
-        systemRole: 'User',
-        roleTitle: 'Financial Member',
-        department: 'Personal Workspace',
-        avatarGradient: 'from-blue-600 to-indigo-600',
-        createdAt: new Date().toISOString().split('T')[0],
-        status: 'Active',
-        isVerified: true,
-      };
+    const cleanEmail = email.trim().toLowerCase();
+    const userId = `usr_reg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-      if (handleRegister) {
-        handleRegister(newRegUser);
-      }
+    registerUserToCloudflareD1({
+      id: userId,
+      name: fullName.trim(),
+      email: cleanEmail,
+      password: password,
+      systemRole: 'User',
+      roleTitle: 'Financial Member',
+      department: 'Personal Workspace',
+      avatarGradient: 'from-blue-600 to-indigo-600',
+      status: 'Active',
+    })
+      .then((result) => {
+        setLoading(false);
+        const savedUser = result.user;
 
-      const newProfile: UserProfile = {
-        id: newRegUser.id,
-        name: newRegUser.name,
-        email: newRegUser.email,
-        role: 'User Member',
-        systemRole: 'User',
-        title: 'Financial Member',
-        department: 'Personal Workspace',
-        avatarGradient: 'from-blue-600 to-indigo-600',
-        liquidityLimit: 100000,
-        currentLiquidity: 0,
-        monthlyBurnRate: 0,
-      };
+        if (handleRegister) {
+          handleRegister(savedUser);
+        }
 
-      setLoading(false);
-      handleSuccess(newProfile);
-    }, 800);
+        const newProfile: UserProfile = {
+          id: savedUser.id,
+          name: savedUser.name,
+          email: savedUser.email,
+          role: 'User Member',
+          systemRole: 'User',
+          title: savedUser.roleTitle || 'Financial Member',
+          department: savedUser.department || 'Personal Workspace',
+          avatarGradient: savedUser.avatarGradient || 'from-blue-600 to-indigo-600',
+          liquidityLimit: 100000,
+          currentLiquidity: 0,
+          monthlyBurnRate: 0,
+        };
+
+        handleSuccess(newProfile);
+      })
+      .catch((err: any) => {
+        setLoading(false);
+        setOtpError(err?.message || 'Registration failed. Please try again.');
+      });
   };
 
   const handleResendCode = () => {

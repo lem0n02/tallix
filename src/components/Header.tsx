@@ -7,14 +7,11 @@ import {
   LogOut,
   Menu,
   X,
-  Sun,
-  Moon,
-  Monitor,
   Globe,
   User,
   Users
 } from 'lucide-react';
-import { UserProfile, ThemeMode, LanguageMode } from '../types';
+import { UserProfile, LanguageMode } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { SyncStatusBadge } from './SyncStatusBadge';
 
@@ -26,8 +23,6 @@ interface HeaderProps {
   onLogout?: () => void;
   onToggleMobileMenu?: () => void;
   isMobileMenuOpen?: boolean;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
   lang: LanguageMode;
   onLangChange: (lang: LanguageMode) => void;
   onOpenGuestModal?: () => void;
@@ -41,15 +36,12 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onToggleMobileMenu,
   isMobileMenuOpen = false,
-  theme,
-  onThemeChange,
   lang,
   onLangChange,
   onOpenGuestModal,
 }) => {
   const [latency, setLatency] = useState<number>(24);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showThemeMenu, setShowThemeMenu] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
   const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
@@ -95,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Actions, Theme, Language & User Profile */}
+      {/* Right: Actions, Language & User Profile */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Offline Sync Status Badge */}
         <SyncStatusBadge />
@@ -109,78 +101,11 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        {/* Theme Switcher Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setShowThemeMenu(!showThemeMenu);
-              setShowLangMenu(false);
-              setShowDropdown(false);
-            }}
-            className="p-1.5 text-[#a1a1aa] hover:text-white bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs"
-            title="Switch Theme (Light, Dark, System)"
-          >
-            {theme === 'light' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : theme === 'dark' ? (
-              <Moon className="w-4 h-4 text-blue-400" />
-            ) : (
-              <Monitor className="w-4 h-4 text-emerald-400" />
-            )}
-            <span className="hidden xl:inline text-[11px] uppercase font-semibold capitalize">{theme}</span>
-          </button>
-
-          {showThemeMenu && (
-            <div className="absolute right-0 mt-2 w-36 bg-[#18181b] border border-[#27272a] rounded-xl shadow-2xl py-1 z-30 animate-fadeIn">
-              <div className="px-3 py-1 text-[10px] uppercase font-bold text-[#71717a] border-b border-[#27272a]">
-                {t('theme')}
-              </div>
-              <button
-                onClick={() => {
-                  onThemeChange('light');
-                  setShowThemeMenu(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#27272a] transition-colors cursor-pointer ${
-                  theme === 'light' ? 'text-amber-400 font-bold bg-[#27272a]/50' : 'text-[#a1a1aa]'
-                }`}
-              >
-                <Sun className="w-3.5 h-3.5" />
-                <span>{t('light')}</span>
-              </button>
-              <button
-                onClick={() => {
-                  onThemeChange('dark');
-                  setShowThemeMenu(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#27272a] transition-colors cursor-pointer ${
-                  theme === 'dark' ? 'text-blue-400 font-bold bg-[#27272a]/50' : 'text-[#a1a1aa]'
-                }`}
-              >
-                <Moon className="w-3.5 h-3.5" />
-                <span>{t('dark')}</span>
-              </button>
-              <button
-                onClick={() => {
-                  onThemeChange('system');
-                  setShowThemeMenu(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#27272a] transition-colors cursor-pointer ${
-                  theme === 'system' ? 'text-emerald-400 font-bold bg-[#27272a]/50' : 'text-[#a1a1aa]'
-                }`}
-              >
-                <Monitor className="w-3.5 h-3.5" />
-                <span>{t('system')}</span>
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* Language Switcher Dropdown */}
         <div className="relative">
           <button
             onClick={() => {
               setShowLangMenu(!showLangMenu);
-              setShowThemeMenu(false);
               setShowDropdown(false);
             }}
             className="p-1.5 text-[#a1a1aa] hover:text-white bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs"
@@ -239,7 +164,6 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => {
                 setShowDropdown(!showDropdown);
-                setShowThemeMenu(false);
                 setShowLangMenu(false);
               }}
               className={`w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr ${user.avatarGradient || 'from-emerald-600 to-teal-500'} flex items-center justify-center font-bold text-xs text-white shadow-md border border-[#27272a] hover:border-emerald-500 transition-all cursor-pointer`}
