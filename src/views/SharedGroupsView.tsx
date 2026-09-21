@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Group, Expense, Settlement, UserProfile } from '../types';
 import { calculateGroupMembersWithBalances, isMemberMatch } from '../utils/balanceEngine';
+import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
 import {
   Users,
   Plus,
@@ -125,7 +126,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
   // 2. Dynamic Total Squad Spent calculation (NEVER changes on settlement)
   const totalSpent = useMemo(() => {
-    return groupExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+    return sumExactAmounts(groupExpenses.map((exp) => exp.originalAmount ?? exp.amount));
   }, [groupExpenses]);
 
   // 3. Calculate member balances dynamically using balanceEngine
@@ -150,24 +151,55 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     );
   }, [updatedMembers, currentUser]);
 
-  const netBalance = currentUserMember ? currentUserMember.balance : 0;
-  const youAreOwed = netBalance > 0 ? netBalance : 0;
-  const youOwe = netBalance < 0 ? Math.abs(netBalance) : 0;
+  // 1. TOTAL GROUP SPENDING: totalSpent
+  // 2. MY PAID: The total amount actually paid by the currently logged-in user.
+  // Formula: SUM(all valid expenses where payer = current user)
+  const myPaid = useMemo(() => {
+    if (currentUserMember && typeof currentUserMember.spent === 'number') {
+      return currentUserMember.spent;
+    }
+    if (!currentUser) return 0;
+    const paidExpenses = groupExpenses.filter((exp) =>
+      isMemberMatch({ id: currentUser.id, name: currentUser.name, email: currentUser.email }, exp.paidByUserId, exp.paidByName)
+    );
+    return sumExactAmounts(paidExpenses.map((exp) => exp.originalAmount ?? exp.amount));
+  }, [currentUserMember, currentUser, groupExpenses]);
 
-  // Unsettled positive net contribution fronted by current user (0 when fully settled)
-  const myContribution = useMemo(() => {
-    if (!currentUserMember) return 0;
-    return Math.max(0, netBalance);
-  }, [netBalance, currentUserMember]);
+  // 3. OTHERS PAID: Total amount actually paid by all other members.
+  // Formula: TOTAL GROUP SPENDING - MY PAID
+  const othersPaid = useMemo(() => {
+    const totalPaisa = toPaisa(totalSpent);
+    const myPaidPaisa = toPaisa(myPaid);
+    return fromPaisa(Math.max(0, totalPaisa - myPaidPaisa));
+  }, [totalSpent, myPaid]);
 
-  // Unsettled net contribution fronted by other members (0 when fully settled)
-  const othersContribution = useMemo(() => {
-    const otherPositiveSum = updatedMembers
-      .filter((m) => currentUserMember ? !isMemberMatch(m, currentUserMember.id, currentUserMember.name) : true)
-      .filter((m) => m.balance > 0)
-      .reduce((sum, m) => sum + m.balance, 0);
-    return Math.max(0, otherPositiveSum);
-  }, [updatedMembers, currentUserMember]);
+  // 4. MY SHARE: The current user's actual calculated share of the group expenses according to the app's existing split rules.
+  const myShare = useMemo(() => {
+    if (currentUserMember && typeof currentUserMember.share === 'number') {
+      return currentUserMember.share;
+    }
+    const memberCount = activeGroup?.members?.length || 0;
+    if (memberCount === 0) return 0;
+    return fromPaisa(Math.round(toPaisa(totalSpent) / memberCount));
+  }, [currentUserMember, activeGroup, totalSpent]);
+
+  // 7. NET BALANCE: MY PAID - MY SHARE (with accepted settlements adjusted)
+  const netBalance = useMemo(() => {
+    if (currentUserMember) {
+      return currentUserMember.balance;
+    }
+    return fromPaisa(toPaisa(myPaid) - toPaisa(myShare));
+  }, [currentUserMember, myPaid, myShare]);
+
+  // 5. OWED TO ME: Amount that other members owe the current user.
+  const youAreOwed = useMemo(() => {
+    return netBalance > 0 ? netBalance : 0;
+  }, [netBalance]);
+
+  // 6. I OWE: Amount the current user owes other members.
+  const youOwe = useMemo(() => {
+    return netBalance < 0 ? Math.abs(netBalance) : 0;
+  }, [netBalance]);
 
   // 6. Member Graph Data
   const memberGraphData = useMemo(() => {
@@ -414,11 +446,11 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
               </div>
             </div>
 
-            {/* Live Cards Row (6 Key Squad Metrics) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 pt-1">
+            {/* Live Cards Row (7 Key Group Financial Metrics) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 pt-1">
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-[#71717a] uppercase tracking-wider">
-                  {t('totalSquadSpending')}
+                  {t('totalGroupSpending')}
                 </span>
                 <p className="text-lg font-mono font-bold text-[#fafafa]">
                   {formatCurrency(totalSpent)}
@@ -430,27 +462,37 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                  {t('myContribution')}
+                  {t('myPaid')}
                 </span>
                 <p className="text-lg font-mono font-bold text-blue-400">
-                  {formatCurrency(myContribution)}
+                  {formatCurrency(myPaid)}
                 </p>
-                <span className="text-[10px] text-[#71717a]">{t('paidBy')}</span>
+                <span className="text-[10px] text-[#71717a]">{t('paidByYou')}</span>
               </div>
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-                  {t('othersContribution')}
+                  {t('othersPaid')}
                 </span>
                 <p className="text-lg font-mono font-bold text-purple-400">
-                  {formatCurrency(othersContribution)}
+                  {formatCurrency(othersPaid)}
                 </p>
-                <span className="text-[10px] text-[#71717a]">{t('splitAmong')}</span>
+                <span className="text-[10px] text-[#71717a]">{t('paidByOthers')}</span>
+              </div>
+
+              <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
+                  {t('myShare')}
+                </span>
+                <p className="text-lg font-mono font-bold text-cyan-400">
+                  {formatCurrency(myShare)}
+                </p>
+                <span className="text-[10px] text-[#71717a]">{t('yourExpenseShare')}</span>
               </div>
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                  {t('amountOwedToMe')}
+                  {t('owedToMe')}
                 </span>
                 <p className="text-lg font-mono font-bold text-emerald-400">
                   {formatCurrency(youAreOwed)}
@@ -460,7 +502,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                  {t('amountIOwe')}
+                  {t('iOwe')}
                 </span>
                 <p className="text-lg font-mono font-bold text-rose-400">
                   {formatCurrency(youOwe)}
@@ -470,7 +512,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                  {t('netSquadBalance')}
+                  {t('netBalance')}
                 </span>
                 <p
                   className={`text-lg font-mono font-bold ${netBalance > 0

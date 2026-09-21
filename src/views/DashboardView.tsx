@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Expense, Group, Settlement, UserProfile } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
+import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
 import { ActiveTab } from '../components/Sidebar';
 import {
   ArrowUpRight,
@@ -74,25 +75,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Shared Expenses
   const sharedExpensesList = expenses.filter((e) => e.isShared);
-  const sharedExpensesAmount = Math.round(sharedExpensesList.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
+  const sharedExpensesAmount = sumExactAmounts(sharedExpensesList.map((exp) => exp.originalAmount ?? exp.amount));
 
-  let owedToYou = 0;
-  let youOwe = 0;
+  let owedToYouPaisa = 0;
+  let youOwePaisa = 0;
 
   groups.forEach((group) => {
     const myMember = group.members.find(
       (m) => isMemberMatch(m, user.id, user.name)
     );
     if (myMember) {
-      if (myMember.balance > 0) {
-        owedToYou += myMember.balance;
-      } else if (myMember.balance < 0) {
-        youOwe += Math.abs(myMember.balance);
+      const bPaisa = toPaisa(myMember.balance);
+      if (bPaisa > 0) {
+        owedToYouPaisa += bPaisa;
+      } else if (bPaisa < 0) {
+        youOwePaisa += Math.abs(bPaisa);
       }
     }
   });
-  owedToYou = Math.round(owedToYou * 100) / 100;
-  youOwe = Math.round(youOwe * 100) / 100;
+  const owedToYou = fromPaisa(owedToYouPaisa);
+  const youOwe = fromPaisa(youOwePaisa);
 
   // Filtered & Sorted Expenses
   const sortedExpenses = [...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

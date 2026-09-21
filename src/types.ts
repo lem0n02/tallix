@@ -46,6 +46,8 @@ export interface GroupMember {
   avatarUrl?: string;
   role: MemberRole;
   balance: number; // positive = owed money, negative = owes money
+  spent?: number;
+  share?: number;
 }
 
 export interface Group {
