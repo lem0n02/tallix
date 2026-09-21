@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { SharedGroupsView } from './views/SharedGroupsView';
+import { DashboardView } from './views/DashboardView';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { Group, Expense, Settlement, UserProfile } from './types';
 import { calculateGroupMembersWithBalances } from './utils/balanceEngine';
@@ -507,5 +508,148 @@ describe('Group Financial Summary Engine & Labels', () => {
     // Balances are now 0 (fully settled / balanced)
     expect(lemon.balance).toBe(0);
     expect(liya.balance).toBe(0);
+  });
+
+  // TEST CASE 7: Main Dashboard Total Expenses = Personal (৳370) + My Paid (৳581) = ৳951.00 (NOT ৳1,016)
+  it('CASE 7: Main Dashboard Total Expenses = Personal (370) + My Shared Contribution (581) = 951.00', () => {
+    const lemonProfile: UserProfile = {
+      id: 'usr_lemon',
+      name: 'Lemon',
+      email: 'lemon@example.com',
+      role: 'Staff Engineer',
+      systemRole: 'User',
+      title: 'Lead',
+      department: 'Engineering',
+      avatarGradient: 'from-blue-500 to-indigo-500',
+      liquidityLimit: 100000,
+      currentLiquidity: 50000,
+      monthlyBurnRate: 25000,
+    };
+
+    const group: Group = {
+      id: 'grp_lemon_liya',
+      name: 'Lemon and Liya',
+      description: 'Trip squad',
+      category: 'Trip',
+      avatarGradient: 'from-blue-600 to-indigo-600',
+      inviteCode: 'LEMON123',
+      members: [
+        { id: 'usr_lemon', name: 'Lemon', email: 'lemon@example.com', role: 'Admin', balance: 258 },
+        { id: 'usr_liya', name: 'Liya', email: 'liya@example.com', role: 'Member', balance: -258 },
+      ],
+      totalSpent: 646,
+      unsettledAmount: 258,
+      currency: 'BDT',
+      createdAt: '2026-03-01',
+    };
+
+    const allExpenses: Expense[] = [
+      // Personal Expenses = ৳370 (250 + 120)
+      {
+        id: 'exp_p1',
+        title: 'Personal Coffee',
+        merchant: 'North End',
+        amount: 250,
+        currency: 'BDT',
+        paidByUserId: 'usr_lemon',
+        paidByName: 'Lemon',
+        date: '2026-03-01',
+        category: 'Food',
+        paymentMethod: 'Cash',
+        isShared: false,
+        status: 'Settled',
+      },
+      {
+        id: 'exp_p2',
+        title: 'Personal Bus Ticket',
+        merchant: 'Bus Co',
+        amount: 120,
+        currency: 'BDT',
+        paidByUserId: 'usr_lemon',
+        paidByName: 'Lemon',
+        date: '2026-03-01',
+        category: 'Transport',
+        paymentMethod: 'Cash',
+        isShared: false,
+        status: 'Settled',
+      },
+      // Shared Expenses:
+      // Lemon paid ৳356 + ৳225 = ৳581
+      {
+        id: 'exp_s1',
+        title: 'Group Lunch',
+        merchant: 'Cafe',
+        amount: 356,
+        currency: 'BDT',
+        paidByUserId: 'usr_lemon',
+        paidByName: 'Lemon',
+        date: '2026-03-01',
+        category: 'Food',
+        paymentMethod: 'Cash',
+        isShared: true,
+        groupId: 'grp_lemon_liya',
+        status: 'Settled',
+      },
+      {
+        id: 'exp_s2',
+        title: 'Group Groceries',
+        merchant: 'Supermarket',
+        amount: 225,
+        currency: 'BDT',
+        paidByUserId: 'usr_lemon',
+        paidByName: 'Lemon',
+        date: '2026-03-02',
+        category: 'Groceries',
+        paymentMethod: 'Cash',
+        isShared: true,
+        groupId: 'grp_lemon_liya',
+        status: 'Settled',
+      },
+      // Liya paid ৳65
+      {
+        id: 'exp_s3',
+        title: 'Group Snacks',
+        merchant: 'Bakery',
+        amount: 65,
+        currency: 'BDT',
+        paidByUserId: 'usr_liya',
+        paidByName: 'Liya',
+        date: '2026-03-03',
+        category: 'Food',
+        paymentMethod: 'Cash',
+        isShared: true,
+        groupId: 'grp_lemon_liya',
+        status: 'Settled',
+      },
+    ];
+
+    const dashboardHtml = renderToString(
+      <LanguageProvider>
+        <DashboardView
+          user={lemonProfile}
+          expenses={allExpenses}
+          groups={[group]}
+          settlements={[]}
+          onOpenNewTransaction={() => {}}
+          onOpenSettleUp={() => {}}
+          onOpenNewGroup={() => {}}
+          onEditExpense={() => {}}
+          onDeleteExpense={() => {}}
+        />
+      </LanguageProvider>
+    );
+
+    // Total Expenses must be ৳951.00 (Personal 370 + Lemon Shared 581)
+    expect(dashboardHtml.includes('951.00')).toBe(true);
+
+    // Must NOT be ৳1,016.00
+    expect(dashboardHtml.includes('1,016')).toBe(false);
+    expect(dashboardHtml.includes('1016')).toBe(false);
+
+    // Personal subtext must be ৳370.00
+    expect(dashboardHtml.includes('370.00')).toBe(true);
+
+    // Shared subtext on dashboard must show Lemon's shared contribution (৳581.00), NOT total squad spending (৳646.00)
+    expect(dashboardHtml.includes('581.00')).toBe(true);
   });
 });

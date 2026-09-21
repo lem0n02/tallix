@@ -55,27 +55,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const { t, formatCurrency, formatNumber, formatDate, toBengaliNumerals } = useLanguage();
 
-  // Aggregated Stats
-  const totalExpensesAmount = Math.round(expenses.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
+  // Helper to determine if an expense was paid by the current user
+  const isPaidByCurrentUser = (exp: Expense) => {
+    return isMemberMatch(
+      { id: user.id, name: user.name, email: user.email },
+      exp.paidByUserId,
+      exp.paidByName
+    );
+  };
 
-  // Current Month Expenses
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const monthlyExpensesAmount = Math.round(expenses
-    .filter((e) => {
-      const d = new Date(e.date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    })
-    .reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
-
-  // Personal Expenses
+  // Personal Expenses: money personally paid by the current user
   const personalExpensesList = expenses.filter((e) => !e.isShared);
-  const personalExpensesAmount = Math.round(personalExpensesList.reduce((sum, exp) => sum + exp.amount, 0) * 100) / 100;
+  const personalExpensesAmount = sumExactAmounts(
+    personalExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
+  );
 
-  // Shared Expenses
-  const sharedExpensesList = expenses.filter((e) => e.isShared);
-  const sharedExpensesAmount = sumExactAmounts(sharedExpensesList.map((exp) => exp.originalAmount ?? exp.amount));
+  // Current User's Group Contribution / My Paid: money actually paid by current user for shared expenses
+  const mySharedExpensesList = expenses.filter((e) => e.isShared && isPaidByCurrentUser(e));
+  const mySharedExpensesAmount = sumExactAmounts(
+    mySharedExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
+  );
+
+  // TOTAL EXPENSES = PERSONAL EXPENSES + CURRENT USER'S GROUP CONTRIBUTION
+  // Excludes other squad members' payments (e.g. ৳65 paid by others is not counted in current user's expenses)
+  const totalExpensesAmount = fromPaisa(
+    toPaisa(personalExpensesAmount) + toPaisa(mySharedExpensesAmount)
+  );
+
+  const myPaidTransactionsCount = personalExpensesList.length + mySharedExpensesList.length;
 
   let owedToYouPaisa = 0;
   let youOwePaisa = 0;
@@ -127,7 +134,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {t('totalExpenses')}
               </p>
               <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
-                {formatNumber(expenses.length)} {t('txs')}
+                {formatNumber(myPaidTransactionsCount)} {t('txs')}
               </span>
             </div>
             <h2 className="text-xl sm:text-3xl font-light tabular-nums font-mono text-[#fafafa] tracking-tight">
@@ -136,7 +143,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="mt-2.5 sm:mt-4 flex items-center justify-between text-[10px] text-[#a1a1aa]">
             <span className="truncate">{t('personal')}: {formatCurrency(personalExpensesAmount)}</span>
-            <span className="truncate ml-1">{t('shared')}: {formatCurrency(sharedExpensesAmount)}</span>
+            <span className="truncate ml-1">{t('shared')}: {formatCurrency(mySharedExpensesAmount)}</span>
           </div>
         </div>
 
