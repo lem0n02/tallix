@@ -151,7 +151,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     );
   }, [updatedMembers, currentUser]);
 
-  // 1. TOTAL GROUP SPENDING: totalSpent
+  // 1. TOTAL SQUAD SPENDING: totalSpent
   // 2. MY PAID: The total amount actually paid by the currently logged-in user.
   // Formula: SUM(all valid expenses where payer = current user)
   const myPaid = useMemo(() => {
@@ -165,13 +165,19 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     return sumExactAmounts(paidExpenses.map((exp) => exp.originalAmount ?? exp.amount));
   }, [currentUserMember, currentUser, groupExpenses]);
 
-  // 3. OTHERS PAID: Total amount actually paid by all other members.
-  // Formula: TOTAL GROUP SPENDING - MY PAID
+  // 3. OTHERS PAID: Total amount actually paid by all other members (NOT from net balance)
+  // Formula: SUM(all valid expenses where payer != current user)
   const othersPaid = useMemo(() => {
-    const totalPaisa = toPaisa(totalSpent);
-    const myPaidPaisa = toPaisa(myPaid);
-    return fromPaisa(Math.max(0, totalPaisa - myPaidPaisa));
-  }, [totalSpent, myPaid]);
+    const otherExpenses = groupExpenses.filter((exp) => {
+      if (!currentUser) return true;
+      return !isMemberMatch(
+        { id: currentUser.id, name: currentUser.name, email: currentUser.email },
+        exp.paidByUserId,
+        exp.paidByName
+      );
+    });
+    return sumExactAmounts(otherExpenses.map((exp) => exp.originalAmount ?? exp.amount));
+  }, [currentUser, groupExpenses]);
 
   // 4. MY SHARE: The current user's actual calculated share of the group expenses according to the app's existing split rules.
   const myShare = useMemo(() => {
@@ -183,7 +189,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     return fromPaisa(Math.round(toPaisa(totalSpent) / memberCount));
   }, [currentUserMember, activeGroup, totalSpent]);
 
-  // 7. NET BALANCE: MY PAID - MY SHARE (with accepted settlements adjusted)
+  // Net balance taking into account accepted settlements
   const netBalance = useMemo(() => {
     if (currentUserMember) {
       return currentUserMember.balance;
@@ -191,12 +197,12 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     return fromPaisa(toPaisa(myPaid) - toPaisa(myShare));
   }, [currentUserMember, myPaid, myShare]);
 
-  // 5. OWED TO ME: Amount that other members owe the current user.
+  // 4. AMOUNT OWED TO ME: max(0, MY PAID - MY SHARE) (with settlements considered)
   const youAreOwed = useMemo(() => {
     return netBalance > 0 ? netBalance : 0;
   }, [netBalance]);
 
-  // 6. I OWE: Amount the current user owes other members.
+  // 5. AMOUNT I OWE: max(0, MY SHARE - MY PAID) (with settlements considered)
   const youOwe = useMemo(() => {
     return netBalance < 0 ? Math.abs(netBalance) : 0;
   }, [netBalance]);
@@ -446,11 +452,11 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
               </div>
             </div>
 
-            {/* Live Cards Row (7 Key Group Financial Metrics) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 pt-1">
+            {/* Live Cards Row (5 Key Squad Financial Metrics) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-1">
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-[#71717a] uppercase tracking-wider">
-                  {t('totalGroupSpending')}
+                  {t('totalSquadSpending')}
                 </span>
                 <p className="text-lg font-mono font-bold text-[#fafafa]">
                   {formatCurrency(totalSpent)}
@@ -481,18 +487,8 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
               </div>
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
-                  {t('myShare')}
-                </span>
-                <p className="text-lg font-mono font-bold text-cyan-400">
-                  {formatCurrency(myShare)}
-                </p>
-                <span className="text-[10px] text-[#71717a]">{t('yourExpenseShare')}</span>
-              </div>
-
-              <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                  {t('owedToMe')}
+                  {t('amountOwedToMe')}
                 </span>
                 <p className="text-lg font-mono font-bold text-emerald-400">
                   {formatCurrency(youAreOwed)}
@@ -502,35 +498,12 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
               <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
                 <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
-                  {t('iOwe')}
+                  {t('amountIOwe')}
                 </span>
                 <p className="text-lg font-mono font-bold text-rose-400">
                   {formatCurrency(youOwe)}
                 </p>
                 <span className="text-[10px] text-[#71717a]">{t('owes')}</span>
-              </div>
-
-              <div className="bg-[#09090b] border border-[#27272a] p-3.5 rounded-lg space-y-1">
-                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                  {t('netBalance')}
-                </span>
-                <p
-                  className={`text-lg font-mono font-bold ${netBalance > 0
-                      ? 'text-emerald-400'
-                      : netBalance < 0
-                        ? 'text-rose-400'
-                        : 'text-[#fafafa]'
-                    }`}
-                >
-                  {netBalance > 0
-                    ? `+${formatCurrency(netBalance)}`
-                    : netBalance < 0
-                      ? `-${formatCurrency(Math.abs(netBalance))}`
-                      : `${formatCurrency(0)} (${t('balanced')})`}
-                </p>
-                <span className="text-[10px] text-[#71717a]">
-                  {netBalance === 0 ? t('allDebtsSettled') : netBalance > 0 ? t('youReceive') : t('youOwe')}
-                </span>
               </div>
             </div>
           </div>

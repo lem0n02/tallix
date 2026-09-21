@@ -120,21 +120,20 @@ describe('Group Financial Summary Engine & Labels', () => {
       </LanguageProvider>
     );
 
-    // Check labels present
-    expect(lemonHtml.includes('Total Group Spending')).toBe(true);
+    // Check 5 exact financial cards labels present
+    expect(lemonHtml.includes('Total Squad Spending')).toBe(true);
     expect(lemonHtml.includes('My Paid')).toBe(true);
     expect(lemonHtml.includes('Others Paid')).toBe(true);
-    expect(lemonHtml.includes('My Share')).toBe(true);
-    expect(lemonHtml.includes('Owed to Me')).toBe(true);
-    expect(lemonHtml.includes('I Owe')).toBe(true);
-    expect(lemonHtml.includes('Net Balance')).toBe(true);
+    expect(lemonHtml.includes('Amount Owed to Me')).toBe(true);
+    expect(lemonHtml.includes('Amount I Owe')).toBe(true);
+    expect(lemonHtml.includes('Net Squad Balance')).toBe(false);
 
     // Check values in Lemon's view
-    expect(lemonHtml.includes('646.00')).toBe(true); // Total
+    expect(lemonHtml.includes('646.00')).toBe(true); // Total Squad Spending
     expect(lemonHtml.includes('581.00')).toBe(true); // Lemon My Paid
     expect(lemonHtml.includes('65.00')).toBe(true);  // Lemon Others Paid
-    expect(lemonHtml.includes('323.00')).toBe(true); // Lemon My Share
-    expect(lemonHtml.includes('258.00')).toBe(true); // Lemon Owed to Me / Net Balance
+    expect(lemonHtml.includes('258.00')).toBe(true); // Lemon Amount Owed to Me
+    expect(lemonHtml.includes('0.00')).toBe(true);   // Lemon Amount I Owe
 
     // Render for Liya
     const liyaProfile: UserProfile = {
@@ -164,11 +163,11 @@ describe('Group Financial Summary Engine & Labels', () => {
       </LanguageProvider>
     );
 
-    expect(liyaHtml.includes('646.00')).toBe(true); // Total
+    expect(liyaHtml.includes('646.00')).toBe(true); // Total Squad Spending
     expect(liyaHtml.includes('65.00')).toBe(true);  // Liya My Paid
     expect(liyaHtml.includes('581.00')).toBe(true); // Liya Others Paid
-    expect(liyaHtml.includes('323.00')).toBe(true); // Liya My Share
-    expect(liyaHtml.includes('258.00')).toBe(true); // Liya Net Balance (258.00)
+    expect(liyaHtml.includes('258.00')).toBe(true); // Liya Amount I Owe
+    expect(liyaHtml.includes('0.00')).toBe(true);   // Liya Amount Owed to Me
   });
 
   // TEST CASE 2: Equal spending
