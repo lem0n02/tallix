@@ -135,6 +135,70 @@ async function startServer() {
     }
   });
 
+  // User Login Endpoint: POST /api/auth/login
+  app.post("/api/auth/login", (req, res) => {
+    try {
+      const { email, password } = req.body || {};
+
+      if (!email || typeof email !== "string" || !email.trim()) {
+        return res.status(400).json({ success: false, error: "Email address is required." });
+      }
+
+      if (!password || typeof password !== "string") {
+        return res.status(400).json({ success: false, error: "Password is required." });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+
+      let matchedUser: any = null;
+      for (const u of serverRegisteredUsers.values()) {
+        if (u.email && u.email.toLowerCase() === cleanEmail) {
+          matchedUser = u;
+          break;
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(404).json({ success: false, error: "No account found with this email address." });
+      }
+
+      if (matchedUser.status === "Disabled") {
+        return res.status(403).json({ success: false, error: "This user account has been disabled. Please contact the administrator." });
+      }
+
+      const submittedHash = crypto.createHash("sha256").update(password).digest("hex");
+      if (matchedUser.passwordHash && matchedUser.passwordHash !== submittedHash) {
+        return res.status(401).json({ success: false, error: "Invalid email or password. Please try again." });
+      }
+
+      const userSystemRole = matchedUser.systemRole === "Admin" ? "Admin" : "User";
+      const userRoleTitle = matchedUser.roleTitle || matchedUser.title || (userSystemRole === "Admin" ? "Super Administrator" : "Financial Member");
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          id: matchedUser.id,
+          name: matchedUser.name,
+          email: matchedUser.email,
+          systemRole: userSystemRole,
+          role: userSystemRole === "Admin" ? userRoleTitle : "User Member",
+          title: userRoleTitle,
+          roleTitle: userRoleTitle,
+          department: matchedUser.department || (userSystemRole === "Admin" ? "Management" : "Personal Workspace"),
+          avatarGradient: matchedUser.avatarGradient || "from-emerald-500 to-teal-500",
+          status: matchedUser.status || "Active",
+          createdAt: matchedUser.createdAt,
+          updatedAt: matchedUser.updatedAt,
+          liquidityLimit: 120000,
+          currentLiquidity: 0,
+          monthlyBurnRate: 0,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "Authentication failed." });
+    }
+  });
+
   // Admin Users Endpoint: GET /api/admin/users
   app.get("/api/admin/users", (req, res) => {
     try {

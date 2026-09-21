@@ -195,6 +195,10 @@ export const translations = {
     exportCsvReport: 'Export CSV Report',
     generatingReport: 'Generating report...',
     downloadAudit: 'Download Complete Audit',
+    noSpendingDataYet: 'No spending data yet',
+    addFirstTransactionToSeeAnalytics: 'Add your first transaction to see your monthly spending trend.',
+    noCategoryDataYet: 'No category breakdown yet',
+    addTransactionsToCategorize: 'Expenses grouped by category will appear here once you log transactions.',
 
     // AI Copilot View
     aiCopilotTitle: 'Tallix AI Copilot',
@@ -567,6 +571,10 @@ export const translations = {
     exportCsvReport: 'সিএসভি রিপোর্ট ডাউনলোড',
     generatingReport: 'রিপোর্ট তৈরি হচ্ছে...',
     downloadAudit: 'সম্পূর্ণ অডিট ডাউনলোড',
+    noSpendingDataYet: 'এখনও কোনো খরচের ডেটা নেই',
+    addFirstTransactionToSeeAnalytics: 'আপনার মাসিক খরচের ট্রেন্ড দেখতে প্রথম ট্রানজ্যাকশন যোগ করুন।',
+    noCategoryDataYet: 'কোনো ক্যাটাগরি বিশ্লেষণ নেই',
+    addTransactionsToCategorize: 'ট্রানজ্যাকশন রেকর্ড করলে ক্যাটাগরি ভিত্তিক হিসাব এখানে দেখা যাবে।',
 
     // AI Copilot View
     aiCopilotTitle: 'ট্যালিক্স এআই কোপাইলট',

@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
 import { isFixedAdminCredentials, getFixedAdminProfile } from '../../config/fixedAdminAuth';
+import { loginUserViaD1 } from '../../services/authService';
 
 interface SignInViewProps {
   onBackToHome?: () => void;
@@ -54,7 +55,7 @@ export const SignInView: React.FC<SignInViewProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleAuthenticate = (emailToAuth: string, pwdToAuth: string) => {
+  const handleAuthenticate = async (emailToAuth: string, pwdToAuth: string) => {
     const cleanEmail = emailToAuth.trim().toLowerCase();
 
     // 1. Hardcoded Fixed Admin Credential Check
@@ -62,60 +63,42 @@ export const SignInView: React.FC<SignInViewProps> = ({
     if (isFixedAdminCredentials(cleanEmail, pwdToAuth)) {
       const adminProfile = getFixedAdminProfile();
       handleSuccess(adminProfile);
-      return;
-    }
-
-    // 2. Normal Registered User Lookup
-    // Checks against registered user records (supports a normal user account with the same email)
-    const matchedUser = registeredUsers.find(
-      (u) => u.email.toLowerCase() === cleanEmail
-    );
-
-    if (!matchedUser) {
-      setErrors({ email: 'No account found. Please create an account first.' });
       setLoading(false);
       return;
     }
 
-    if (matchedUser.status === 'Disabled') {
-      setErrors({ general: 'This user account has been disabled. Please contact the administrator.' });
+    // 2. Authoritative Login via Cloudflare D1
+    try {
+      const result = await loginUserViaD1(cleanEmail, pwdToAuth);
+      if (result.success && result.user) {
+        handleSuccess(result.user);
+        return;
+      }
+
+      const errorMsg = result.error || 'Authentication failed. Please check your credentials.';
+      const lower = errorMsg.toLowerCase();
+      if (lower.includes('no account found')) {
+        setErrors({ email: 'No account found. Please create an account first.' });
+      } else if (lower.includes('disabled')) {
+        setErrors({ general: 'This user account has been disabled. Please contact the administrator.' });
+      } else if (lower.includes('invalid email or password')) {
+        setErrors({ password: 'Invalid email or password. Please try again.' });
+      } else {
+        setErrors({ general: errorMsg });
+      }
+    } catch (err: any) {
+      setErrors({ general: err?.message || 'An unexpected error occurred during sign in.' });
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // Validate password for normal user account
-    if (matchedUser.password && matchedUser.password !== pwdToAuth) {
-      setErrors({ password: 'Invalid email or password. Please try again.' });
-      setLoading(false);
-      return;
-    }
-
-    const authProfile: UserProfile = {
-      id: matchedUser.id,
-      name: matchedUser.name,
-      email: matchedUser.email,
-      role: matchedUser.systemRole === 'Admin' ? (matchedUser.roleTitle || 'Super Administrator') : 'User Member',
-      systemRole: matchedUser.systemRole,
-      title: matchedUser.roleTitle || (matchedUser.systemRole === 'Admin' ? 'Super Administrator' : 'Financial Member'),
-      department: matchedUser.department || (matchedUser.systemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
-      avatarGradient: matchedUser.avatarGradient || 'from-emerald-500 to-teal-500',
-      liquidityLimit: 120000,
-      currentLiquidity: 0,
-      monthlyBurnRate: 0,
-    };
-
-    handleSuccess(authProfile);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setLoading(true);
-    setTimeout(() => {
-      handleAuthenticate(email, password);
-      setLoading(false);
-    }, 600);
+    await handleAuthenticate(email, password);
   };
 
   return (

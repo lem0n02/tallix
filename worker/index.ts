@@ -239,6 +239,97 @@ export default {
         }
       }
 
+      // 4. Login Endpoint: POST /api/auth/login
+      // Authoritative user authentication against Cloudflare D1 with SHA-256 password hash verification
+      if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+        try {
+          const body: any = await request.json();
+          const { email, password } = body || {};
+
+          if (!email || typeof email !== 'string' || !email.trim()) {
+            return jsonResponse({ success: false, error: 'Email address is required.' }, 400);
+          }
+
+          if (!password || typeof password !== 'string') {
+            return jsonResponse({ success: false, error: 'Password is required.' }, 400);
+          }
+
+          const cleanEmail = email.trim().toLowerCase();
+
+          // Query user from Cloudflare D1
+          let user: any = null;
+          try {
+            user = await env.DB.prepare(`
+              SELECT id, name, email, password_hash, system_role, role, title,
+                     role_title, department, avatar_gradient, status, created_at, updated_at
+              FROM users
+              WHERE LOWER(email) = LOWER(?)
+              LIMIT 1
+            `).bind(cleanEmail).first<any>();
+          } catch (queryErr: any) {
+            console.warn('[D1 Login Query Fallback]', queryErr?.message);
+            user = await env.DB.prepare(`
+              SELECT id, name, email, password_hash, system_role, role, title,
+                     department, avatar_gradient, created_at, updated_at
+              FROM users
+              WHERE LOWER(email) = LOWER(?)
+              LIMIT 1
+            `).bind(cleanEmail).first<any>();
+          }
+
+          if (!user) {
+            return jsonResponse({
+              success: false,
+              error: 'No account found with this email address.',
+            }, 404);
+          }
+
+          if (user.status === 'Disabled') {
+            return jsonResponse({
+              success: false,
+              error: 'This user account has been disabled. Please contact the administrator.',
+            }, 403);
+          }
+
+          // Verify password hash with SHA-256
+          const submittedHash = await hashPassword(password);
+          if (user.password_hash && user.password_hash !== submittedHash) {
+            return jsonResponse({
+              success: false,
+              error: 'Invalid email or password. Please try again.',
+            }, 401);
+          }
+
+          const userSystemRole = user.system_role === 'Admin' ? 'Admin' : 'User';
+          const userRoleTitle = user.role_title || user.title || (userSystemRole === 'Admin' ? 'Super Administrator' : 'Financial Member');
+
+          // Return sanitized user session profile (NO passwords, NO password hashes)
+          return jsonResponse({
+            success: true,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              systemRole: userSystemRole,
+              role: userSystemRole === 'Admin' ? userRoleTitle : 'User Member',
+              title: userRoleTitle,
+              roleTitle: userRoleTitle,
+              department: user.department || (userSystemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
+              avatarGradient: user.avatar_gradient || 'from-emerald-500 to-teal-500',
+              status: user.status || 'Active',
+              createdAt: user.created_at,
+              updatedAt: user.updated_at,
+              liquidityLimit: 120000,
+              currentLiquidity: 0,
+              monthlyBurnRate: 0,
+            },
+          }, 200);
+        } catch (err: any) {
+          console.error('[Login API Error]', err);
+          return jsonResponse({ success: false, error: err?.message || 'Authentication failed.' }, 500);
+        }
+      }
+
       // 4. Admin Users Endpoint: GET /api/admin/users
       // Authoritative retrieval of registered users from Cloudflare D1
       // Excludes password, password_hash, and sensitive secrets

@@ -541,6 +541,28 @@ export default function App() {
     localStorage.setItem('tallix_auth', 'true');
     localStorage.setItem('tallix_user', JSON.stringify(authenticatedUser));
 
+    // Ensure authenticated user is in registeredUsers state so local views immediately have access
+    setRegisteredUsers((prev) => {
+      if (prev.some((u) => u.id === authenticatedUser.id || (u.email && u.email.toLowerCase() === authenticatedUser.email.toLowerCase()))) {
+        return prev;
+      }
+      return [
+        {
+          id: authenticatedUser.id,
+          name: authenticatedUser.name,
+          email: authenticatedUser.email,
+          systemRole: authenticatedUser.systemRole,
+          roleTitle: authenticatedUser.title,
+          department: authenticatedUser.department,
+          avatarGradient: authenticatedUser.avatarGradient,
+          createdAt: new Date().toISOString().split('T')[0],
+          status: 'Active',
+          isVerified: true,
+        },
+        ...prev,
+      ];
+    });
+
     // Automatic Role-Based Dashboard Redirection
     if (authenticatedUser.systemRole === 'Admin') {
       setActiveTab('system-admin');
@@ -607,6 +629,7 @@ export default function App() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setIsGuestSession(false);
+    setUser(INITIAL_USER);
     localStorage.removeItem('tallix_auth');
     localStorage.removeItem('tallix_user');
 

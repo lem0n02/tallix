@@ -1,5 +1,5 @@
 // Authoritative Authentication & Cloudflare D1 User Registry Service for Tallix
-import { RegisteredUser } from '../types';
+import { RegisteredUser, UserProfile } from '../types';
 import { buildApiUrl, getAdminAuthHeaders } from './apiConfig';
 import { LocalRepository } from './localRepository';
 import { idbPut, STORES } from './indexedDB';
@@ -21,6 +21,14 @@ export interface RegisterUserResult {
   user: RegisteredUser;
   isOffline?: boolean;
   message?: string;
+}
+
+export interface LoginResult {
+  success: boolean;
+  user?: UserProfile;
+  registeredUser?: RegisteredUser;
+  error?: string;
+  isOffline?: boolean;
 }
 
 /**
@@ -116,6 +124,158 @@ export async function registerUserToCloudflareD1(input: RegisterUserInput): Prom
       user: userRecord,
       isOffline: true,
       message: 'Connection issue. Registration queued locally and will sync to Cloudflare D1 automatically.',
+    };
+  }
+}
+
+/**
+ * Authoritative user login against Cloudflare D1 with SHA-256 verification and offline cache fallback.
+ * Allows any device (mobile, laptop, tablet) to authenticate securely.
+ * On success, caches the user profile locally in IndexedDB for subsequent offline access.
+ */
+export async function loginUserViaD1(email: string, password: string): Promise<LoginResult> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // If device is explicitly offline, check local cache
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const localUsers = await LocalRepository.getAllRegisteredUsers();
+    const localUser = localUsers.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!localUser) {
+      return {
+        success: false,
+        error: 'You are currently offline, and no local account was found on this device. Connect to the internet to sign in.',
+        isOffline: true,
+      };
+    }
+    if (localUser.status === 'Disabled') {
+      return {
+        success: false,
+        error: 'This user account has been disabled. Please contact the administrator.',
+      };
+    }
+    if (localUser.password && localUser.password !== password) {
+      return {
+        success: false,
+        error: 'Invalid email or password. Please try again.',
+      };
+    }
+    const profile: UserProfile = {
+      id: localUser.id,
+      name: localUser.name,
+      email: localUser.email,
+      role: localUser.systemRole === 'Admin' ? (localUser.roleTitle || 'Super Administrator') : 'User Member',
+      systemRole: localUser.systemRole,
+      title: localUser.roleTitle || (localUser.systemRole === 'Admin' ? 'Super Administrator' : 'Financial Member'),
+      department: localUser.department || (localUser.systemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
+      avatarGradient: localUser.avatarGradient || 'from-emerald-500 to-teal-500',
+      liquidityLimit: 120000,
+      currentLiquidity: 0,
+      monthlyBurnRate: 0,
+    };
+    return { success: true, user: profile, registeredUser: localUser, isOffline: true };
+  }
+
+  const endpointUrl = buildApiUrl('/api/auth/login');
+  try {
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: cleanEmail, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || (response.status === 404 ? 'No account found with this email address.' : 'Invalid email or password. Please try again.'),
+      };
+    }
+
+    const authUser = data.user;
+    const userProfile: UserProfile = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      role: authUser.role || 'User Member',
+      systemRole: authUser.systemRole || 'User',
+      title: authUser.title || authUser.roleTitle || 'Financial Member',
+      department: authUser.department || 'Personal Workspace',
+      avatarGradient: authUser.avatarGradient || 'from-emerald-500 to-teal-500',
+      liquidityLimit: authUser.liquidityLimit || 120000,
+      currentLiquidity: authUser.currentLiquidity || 0,
+      monthlyBurnRate: authUser.monthlyBurnRate || 0,
+    };
+
+    // Cache the authoritative user locally in IndexedDB & LocalRepository
+    const registeredUserRecord: RegisteredUser = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      password: password, // preserved in local device cache for offline credentials validation
+      systemRole: authUser.systemRole || 'User',
+      roleTitle: authUser.roleTitle || authUser.title || 'Financial Member',
+      department: authUser.department || 'Personal Workspace',
+      avatarGradient: authUser.avatarGradient || 'from-emerald-500 to-teal-500',
+      createdAt: authUser.createdAt || new Date().toISOString().split('T')[0],
+      status: authUser.status || 'Active',
+      isVerified: true,
+      updatedAt: authUser.updatedAt || new Date().toISOString(),
+    };
+
+    try {
+      await LocalRepository.saveRegisteredUser(registeredUserRecord);
+      await idbPut(STORES.USERS, registeredUserRecord);
+    } catch (cacheErr) {
+      console.warn('[AuthService] Could not cache login record locally:', cacheErr);
+    }
+
+    return {
+      success: true,
+      user: userProfile,
+      registeredUser: registeredUserRecord,
+    };
+  } catch (networkErr: any) {
+    console.warn('[AuthService] Network error during login, attempting local cache fallback:', networkErr);
+
+    // Fall back to local IndexedDB repository if server is unreachable
+    const localUsers = await LocalRepository.getAllRegisteredUsers();
+    const localUser = localUsers.find(u => u.email.toLowerCase() === cleanEmail);
+    if (localUser) {
+      if (localUser.status === 'Disabled') {
+        return {
+          success: false,
+          error: 'This user account has been disabled. Please contact the administrator.',
+        };
+      }
+      if (localUser.password && localUser.password !== password) {
+        return {
+          success: false,
+          error: 'Invalid email or password. Please try again.',
+        };
+      }
+      const profile: UserProfile = {
+        id: localUser.id,
+        name: localUser.name,
+        email: localUser.email,
+        role: localUser.systemRole === 'Admin' ? (localUser.roleTitle || 'Super Administrator') : 'User Member',
+        systemRole: localUser.systemRole,
+        title: localUser.roleTitle || (localUser.systemRole === 'Admin' ? 'Super Administrator' : 'Financial Member'),
+        department: localUser.department || (localUser.systemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
+        avatarGradient: localUser.avatarGradient || 'from-emerald-500 to-teal-500',
+        liquidityLimit: 120000,
+        currentLiquidity: 0,
+        monthlyBurnRate: 0,
+      };
+      return { success: true, user: profile, registeredUser: localUser, isOffline: true };
+    }
+
+    return {
+      success: false,
+      error: 'Unable to connect to the authentication server. Please check your network connection and try again.',
+      isOffline: true,
     };
   }
 }
