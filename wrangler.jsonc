@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tallix-worker",
+  "account_id": "b10908f8e6000392cb23a645aece3acc",
   "main": "worker/index.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
