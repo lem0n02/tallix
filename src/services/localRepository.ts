@@ -148,6 +148,7 @@ export class LocalRepository {
       amount: exactAmount,
       originalAmount: origAmount,
       amount_paisa: toPaisa(origAmount),
+      updatedAt: expense.updatedAt || new Date().toISOString(),
     };
 
     await idbPut(STORES.EXPENSES, record);

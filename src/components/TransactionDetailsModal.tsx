@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Building,
@@ -10,13 +10,18 @@ import {
   User,
   Clock,
   Info,
+  Edit3,
 } from 'lucide-react';
-import { Expense } from '../types';
+import { Expense, Group, UserProfile } from '../types';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   expense: Expense | null;
+  onEditExpense?: (expense: Expense) => void;
+  onEdit?: (expense: Expense) => void;
+  currentUser?: UserProfile | null;
+  groups?: Group[];
   onUpdateStatus?: (id: string, newStatus: 'Settled' | 'Pending' | 'Flagged') => void;
   onDeleteExpense: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -26,14 +31,63 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
   isOpen,
   onClose,
   expense,
+  onEditExpense,
+  onEdit,
+  currentUser,
+  groups = [],
   onDeleteExpense,
   onDelete,
 }) => {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
+  // Permission check: inspect ownership and authority rules
+  const canEdit = useMemo(() => {
+    if (!expense) return false;
+    if (!currentUser) return true; // If no currentUser context passed, allow if handler available
+    if (currentUser.systemRole === 'Admin') return true;
+
+    // Personal expense: only the creator or payer
+    if (!expense.isShared) {
+      const cleanUserEmail = (currentUser.email || '').toLowerCase();
+      const cleanExpEmail = ((expense as any).createdByEmail || '').toLowerCase();
+      return (
+        expense.paidByUserId === currentUser.id ||
+        expense.createdBy === currentUser.id ||
+        (cleanExpEmail !== '' && cleanExpEmail === cleanUserEmail) ||
+        (!expense.paidByUserId && !expense.createdBy)
+      );
+    }
+
+    // Shared squad expense: must be payer, creator, or member of the squad
+    if (expense.isShared) {
+      if (
+        expense.paidByUserId === currentUser.id ||
+        expense.createdBy === currentUser.id ||
+        (expense.paidByName && expense.paidByName.toLowerCase() === currentUser.name.toLowerCase())
+      ) {
+        return true;
+      }
+      if (expense.groupId && groups && groups.length > 0) {
+        const group = groups.find((g) => g.id === expense.groupId);
+        if (group && Array.isArray(group.members)) {
+          return group.members.some(
+            (m) =>
+              m.id === currentUser.id ||
+              (m.email && m.email.toLowerCase() === currentUser.email?.toLowerCase()) ||
+              m.name.toLowerCase() === currentUser.name.toLowerCase()
+          );
+        }
+      }
+      return true;
+    }
+
+    return true;
+  }, [expense, currentUser, groups]);
+
   if (!isOpen || !expense) return null;
 
   const handleDelete = onDeleteExpense || onDelete || (() => {});
+  const handleEdit = onEditExpense || onEdit;
 
   const handleConfirmDelete = () => {
     handleDelete(expense.id);
@@ -57,8 +111,17 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
     : expense.merchant || expense.title || 'Untitled Expense';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-      <div className="relative w-full max-w-md bg-[#18181b] border border-[#27272a] rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95 duration-200">
+    <div
+      id="transaction-details-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        id="transaction-details-modal-card"
+        className="relative w-full max-w-md bg-[#18181b] border border-[#27272a] rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95 duration-200"
+      >
         {/* Header */}
         <div className="flex items-start justify-between border-b border-[#27272a] pb-3">
           <div className="flex items-center gap-3 pr-2">
@@ -71,8 +134,10 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             </div>
           </div>
           <button
+            id="close-transaction-details-btn"
             onClick={onClose}
             className="text-[#71717a] hover:text-[#fafafa] p-1.5 rounded-lg hover:bg-[#27272a] transition-colors cursor-pointer shrink-0"
+            aria-label="Close Details Modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -84,7 +149,10 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             <span className="text-[10px] text-[#71717a] uppercase font-bold tracking-widest block">
               Total Amount
             </span>
-            <div className="text-2xl sm:text-3xl font-extrabold text-[#fafafa] font-mono tracking-tight">
+            <div
+              id="transaction-details-amount"
+              className="text-2xl sm:text-3xl font-extrabold text-[#fafafa] font-mono tracking-tight"
+            >
               ৳{expense.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
           </div>
@@ -106,14 +174,18 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             <span className="text-[10px] text-[#71717a] uppercase font-bold flex items-center gap-1">
               <Building className="w-3 h-3 text-blue-400" /> Full Title
             </span>
-            <p className="font-semibold text-[#fafafa] text-xs sm:text-sm break-words">{fullTitle}</p>
+            <p id="transaction-details-title" className="font-semibold text-[#fafafa] text-xs sm:text-sm break-words">
+              {fullTitle}
+            </p>
           </div>
 
           <div className="bg-[#09090b] border border-[#27272a] p-3 rounded-xl space-y-1">
             <span className="text-[10px] text-[#71717a] uppercase font-bold flex items-center gap-1">
               <Tag className="w-3 h-3 text-amber-400" /> Category
             </span>
-            <p className="text-[#fafafa] font-medium truncate">{expense.category}</p>
+            <p id="transaction-details-category" className="text-[#fafafa] font-medium truncate">
+              {expense.category}
+            </p>
           </div>
 
           <div className="bg-[#09090b] border border-[#27272a] p-3 rounded-xl space-y-1">
@@ -127,7 +199,7 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
             <span className="text-[10px] text-[#71717a] uppercase font-bold flex items-center gap-1">
               <Calendar className="w-3 h-3 text-emerald-400" /> Date
             </span>
-            <p className="font-mono text-[#fafafa]">{expense.date}</p>
+            <p id="transaction-details-date" className="font-mono text-[#fafafa]">{expense.date}</p>
           </div>
 
           <div className="bg-[#09090b] border border-[#27272a] p-3 rounded-xl space-y-1">
@@ -160,18 +232,20 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
           </div>
         )}
 
-        {/* Actions Footer */}
+        {/* Actions Footer: [ Edit ] [ Delete Transaction ] */}
         <div className="flex items-center justify-between pt-3 border-t border-[#27272a]">
           {showConfirmDelete ? (
             <div className="flex items-center gap-2">
               <span className="text-xs text-rose-400 font-semibold">Confirm delete?</span>
               <button
+                id="confirm-delete-transaction-btn"
                 onClick={handleConfirmDelete}
                 className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all cursor-pointer"
               >
                 Delete
               </button>
               <button
+                id="cancel-delete-transaction-btn"
                 onClick={() => setShowConfirmDelete(false)}
                 className="px-2.5 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#a1a1aa] text-xs transition-all cursor-pointer"
               >
@@ -179,16 +253,32 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setShowConfirmDelete(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-semibold transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Transaction</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {canEdit && handleEdit && (
+                <button
+                  id="edit-transaction-detail-btn"
+                  onClick={() => handleEdit(expense)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs font-semibold transition-colors cursor-pointer"
+                  title="Edit Transaction"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+              )}
+              <button
+                id="delete-transaction-detail-btn"
+                onClick={() => setShowConfirmDelete(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-semibold transition-colors cursor-pointer"
+                title="Delete Transaction"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Transaction</span>
+              </button>
+            </div>
           )}
 
           <button
+            id="close-details-footer-btn"
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-xs font-bold text-white transition-all cursor-pointer"
           >

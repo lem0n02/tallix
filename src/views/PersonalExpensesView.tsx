@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Expense } from '../types';
-import { Plus, Search, Trash2, Calendar, CreditCard, Tag, DollarSign, TrendingUp } from 'lucide-react';
+import { Plus, Search, Trash2, Calendar, CreditCard, Tag, DollarSign, TrendingUp, Edit } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -17,12 +17,14 @@ interface PersonalExpensesViewProps {
   onOpenNewTransaction: () => void;
   onDeleteExpense: (id: string) => void;
   onToggleExpenseStatus?: (id: string) => void;
+  onEditExpense?: (expense: Expense) => void;
 }
 
 export const PersonalExpensesView: React.FC<PersonalExpensesViewProps> = ({
   expenses,
   onOpenNewTransaction,
   onDeleteExpense,
+  onEditExpense,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -267,13 +269,24 @@ export const PersonalExpensesView: React.FC<PersonalExpensesViewProps> = ({
 
                   {/* Action */}
                   <td className="px-4 py-4 text-center">
-                    <button
-                      onClick={() => onDeleteExpense(exp.id)}
-                      className="text-[#71717a] hover:text-red-400 p-1.5 rounded hover:bg-[#27272a] transition-colors cursor-pointer"
-                      title={t('delete')}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      {onEditExpense && (
+                        <button
+                          onClick={() => onEditExpense(exp)}
+                          className="text-[#71717a] hover:text-blue-400 p-1.5 rounded hover:bg-[#27272a] transition-colors cursor-pointer"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onDeleteExpense(exp.id)}
+                        className="text-[#71717a] hover:text-red-400 p-1.5 rounded hover:bg-[#27272a] transition-colors cursor-pointer"
+                        title={t('delete')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

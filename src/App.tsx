@@ -1003,6 +1003,7 @@ export default function App() {
       amount: exactAmount,
       originalAmount: origAmount,
       amount_paisa: toPaisa(origAmount),
+      updatedAt: new Date().toISOString(),
     };
     LocalRepository.updateExpense(cleanExpense, user.id);
     setExpenses((prev) => prev.map((e) => (e.id === cleanExpense.id ? cleanExpense : e)));
@@ -1257,6 +1258,7 @@ export default function App() {
               onSaveExpense={handleSaveExpense}
               onUpdateExpenseStatus={handleUpdateExpenseStatus}
               onDeleteExpense={handleDeleteExpense}
+              onEditExpense={(exp) => setEditingExpense(exp)}
               lang={lang}
             />
           )}
@@ -1267,6 +1269,7 @@ export default function App() {
               onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
               onDeleteExpense={handleDeleteExpense}
               onToggleExpenseStatus={handleToggleExpenseStatus}
+              onEditExpense={(exp) => setEditingExpense(exp)}
             />
           )}
 
@@ -1394,7 +1397,9 @@ export default function App() {
         onClose={() => setEditingExpense(null)}
         expense={editingExpense}
         groups={userGroups}
+        currentUser={user}
         onSaveExpense={handleEditExpense}
+        onSave={handleEditExpense}
       />
 
       <EditProfileModal

@@ -37,6 +37,9 @@ export interface Expense {
   splitType?: SplitType;
   splits?: ExpenseSplit[];
   tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  updated_at?: string;
 }
 
 export interface GroupMember {
@@ -116,15 +119,19 @@ export interface UserProfile {
   email: string;
   role: string;
   systemRole: 'Admin' | 'User';
-  title: string;
-  department: string;
-  avatarGradient: string;
+  title?: string;
+  department?: string;
+  avatarGradient?: string;
   avatarUrl?: string;
-  liquidityLimit: number;
-  currentLiquidity: number;
-  monthlyBurnRate: number;
+  avatar?: string;
+  monthlyBudget?: number;
+  liquidityLimit?: number;
+  currentLiquidity?: number;
+  monthlyBurnRate?: number;
   aiCopilotEnabled?: boolean;
   isGuest?: boolean;
+  roleTitle?: string;
+  status?: string;
 }
 
 export interface RegisteredUser {

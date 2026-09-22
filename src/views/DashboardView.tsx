@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Expense, Group, Settlement, UserProfile } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
 import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
@@ -34,6 +34,7 @@ interface DashboardViewProps {
   onSaveExpense: (expense: Omit<Expense, 'id'>) => void;
   onUpdateExpenseStatus: (id: string, status: 'Settled' | 'Pending' | 'Flagged') => void;
   onDeleteExpense: (id: string) => void;
+  onEditExpense?: (expense: Expense) => void;
   lang?: string;
 }
 
@@ -48,10 +49,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSaveExpense,
   onUpdateExpenseStatus,
   onDeleteExpense,
+  onEditExpense,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'All' | 'Personal' | 'Shared'>('All');
   const [selectedTxForDetails, setSelectedTxForDetails] = useState<Expense | null>(null);
+
+  // Keep selectedTxForDetails in sync when an expense is edited or updated
+  useEffect(() => {
+    if (selectedTxForDetails) {
+      const fresh = expenses.find((e) => e.id === selectedTxForDetails.id);
+      if (fresh && fresh !== selectedTxForDetails) {
+        setSelectedTxForDetails(fresh);
+      }
+    }
+  }, [expenses, selectedTxForDetails]);
 
   const { t, formatCurrency, formatNumber, formatDate, toBengaliNumerals } = useLanguage();
 
@@ -422,6 +434,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           expense={selectedTxForDetails}
           isOpen={!!selectedTxForDetails}
           onClose={() => setSelectedTxForDetails(null)}
+          onEditExpense={(exp) => {
+            onEditExpense?.(exp);
+          }}
+          currentUser={user}
+          groups={groups}
           onUpdateStatus={(id, status) => {
             onUpdateExpenseStatus(id, status);
             setSelectedTxForDetails(null);
