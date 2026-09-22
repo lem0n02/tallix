@@ -47,6 +47,8 @@ interface AdminViewProps {
   currentUserId: string;
 }
 
+export const ADMIN_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (3,600,000 ms)
+
 export const AdminView: React.FC<AdminViewProps> = ({
   registeredUsers,
   groups,
@@ -73,6 +75,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
+  // Timestamp of the most recent fetch to prevent duplicate/premature requests
+  const lastFetchTimeRef = React.useRef<number>(0);
+  const onRefreshUsersRef = React.useRef(onRefreshUsers);
+
+  React.useEffect(() => {
+    onRefreshUsersRef.current = onRefreshUsers;
+  }, [onRefreshUsers]);
+
   // Synchronize with incoming prop when prop changes
   React.useEffect(() => {
     if (registeredUsers && registeredUsers.length > 0) {
@@ -87,20 +97,58 @@ export const AdminView: React.FC<AdminViewProps> = ({
       const fetched = await fetchAdminUsersFromD1();
       if (Array.isArray(fetched) && fetched.length > 0) {
         setD1Users(fetched);
-        if (onRefreshUsers) {
-          onRefreshUsers(fetched);
+        if (onRefreshUsersRef.current) {
+          onRefreshUsersRef.current(fetched);
         }
       }
       setLastRefreshedAt(new Date());
+      lastFetchTimeRef.current = Date.now();
     } catch (err) {
       console.warn('[AdminView] Failed to retrieve authoritative users from D1:', err);
     } finally {
       setIsRefreshing(false);
     }
-  }, [onRefreshUsers]);
+  }, []);
 
+  // Managed single 1-hour lifecycle timer:
+  // 1. Exactly ONE initial D1 fetch on mount
+  // 2. Maximum ONE automatic refresh per hour
+  // 3. Single interval timer, cleanly cleared on unmount
+  // 4. Tab visibility guard (no polling while hidden; checks elapsed time when returning)
   React.useEffect(() => {
+    // 1. Initial D1 fetch on mount
     loadAuthoritativeUsers();
+
+    // 2. Single 1-hour timer for automatic refresh
+    const hourlyTimerId = setInterval(() => {
+      // Do not run background requests if tab is hidden
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      loadAuthoritativeUsers();
+    }, ADMIN_AUTO_REFRESH_INTERVAL_MS);
+
+    // 3. Tab visibility handler: on returning, if 1-hour interval has elapsed since last fetch, refresh at most once
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        const elapsed = Date.now() - lastFetchTimeRef.current;
+        if (elapsed >= ADMIN_AUTO_REFRESH_INTERVAL_MS) {
+          loadAuthoritativeUsers();
+        }
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    // 4. Clean up single timer and listener when unmounting
+    return () => {
+      clearInterval(hourlyTimerId);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
   }, [loadAuthoritativeUsers]);
 
   const { t, formatNumber, formatDate } = useLanguage();

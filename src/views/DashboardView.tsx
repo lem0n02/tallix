@@ -135,11 +135,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const recentExpenses = filteredExpenses.slice(0, 7);
 
   return (
-    <div className="px-4 py-3 sm:p-5 lg:p-6 space-y-3 sm:space-y-6 flex-1 overflow-y-auto custom-scrollbar relative pb-28 sm:pb-6">
+    <div className="px-3.5 sm:px-5 lg:px-6 py-3 sm:py-5 lg:py-6 space-y-3 sm:space-y-6 flex-1 overflow-y-auto custom-scrollbar relative pb-28 sm:pb-6">
       {/* Primary Metrics Grid (Owed / Receivables / Debt) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        {/* Metric 1: Total Expenses */}
-        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
+        {/* Metric 1: Total Expenses — full width on mobile, 1 col on desktop */}
+        <div className="col-span-2 sm:col-span-1 bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
           <div>
             <div className="flex justify-between items-center mb-1">
               <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
@@ -159,35 +159,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 2: Owed to You */}
-        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
+        {/* Metric 2: Owed to You — side-by-side with You Owe on mobile */}
+        <div className="col-span-1 bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-3 sm:p-5 rounded-xl flex flex-col justify-between shadow-sm min-w-0">
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
+            <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-1 mb-1">
+              <p className="text-[10px] sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider truncate">
                 {t('owedToYou')}
               </p>
-              <span className="text-xs sm:text-[9px] font-medium sm:font-mono sm:font-semibold text-[#10b981] sm:text-emerald-400 bg-[#064e3b]/50 sm:bg-emerald-500/10 border border-[#059669]/40 sm:border-emerald-500/20 px-2.5 py-0.5 sm:px-1.5 sm:rounded rounded-md">
+              <span className="text-[10px] sm:text-[9px] font-medium sm:font-mono sm:font-semibold text-[#10b981] sm:text-emerald-400 bg-[#064e3b]/50 sm:bg-emerald-500/10 border border-[#059669]/40 sm:border-emerald-500/20 px-1.5 py-0.5 rounded sm:rounded-md w-fit shrink-0">
                 {t('receivable')}
               </span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono text-[#10b981] sm:text-emerald-400 tracking-tight mt-1 mb-1 sm:my-0">
+            <h2 className="text-base xs:text-lg sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono text-[#10b981] sm:text-emerald-400 tracking-tight mt-0.5 sm:my-0 truncate">
               {formatCurrency(owedToYou)}
             </h2>
           </div>
-          <p className="text-xs sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
+          <p className="text-[10px] sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
             {owedToYou > 0 ? t('pendingClaims') : t('noReceivables')}
           </p>
         </div>
 
-        {/* Metric 3: You Owe */}
-        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
+        {/* Metric 3: You Owe — side-by-side with Owed to You on mobile */}
+        <div className="col-span-1 bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-3 sm:p-5 rounded-xl flex flex-col justify-between shadow-sm min-w-0">
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
+            <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-1 mb-1">
+              <p className="text-[10px] sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider truncate">
                 {t('youOwe')}
               </p>
               <span
-                className={`text-xs sm:text-[9px] font-medium sm:font-mono sm:font-bold px-2.5 py-0.5 sm:px-1.5 sm:rounded rounded-md border ${
+                className={`text-[10px] sm:text-[9px] font-medium sm:font-mono sm:font-bold px-1.5 py-0.5 rounded sm:rounded-md border w-fit shrink-0 ${
                   youOwe > 0 
                     ? 'text-amber-400 bg-amber-950/50 border-amber-800/50 sm:bg-amber-500/10 sm:border-amber-500/20' 
                     : 'text-[#94a3b8] sm:text-[#71717a] bg-[#1e293b]/70 sm:bg-zinc-800 border-[#334155]/60 sm:border-zinc-700'
@@ -197,34 +197,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
             <h2
-              className={`text-2xl sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono tracking-tight mt-1 mb-1 sm:my-0 ${
+              className={`text-base xs:text-lg sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono tracking-tight mt-0.5 sm:my-0 truncate ${
                 youOwe > 0 ? 'text-amber-400' : 'text-white sm:text-[#fafafa]'
               }`}
             >
               {formatCurrency(youOwe)}
             </h2>
           </div>
-          <p className="text-xs sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
+          <p className="text-[10px] sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
             {youOwe > 0 ? t('outstandingBalance') : t('allDebtsCleared')}
           </p>
         </div>
       </div>
 
       {/* Quick Action Buttons Bar */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-2 w-full my-0.5 sm:my-0">
+      <div className="grid grid-cols-2 gap-2 sm:gap-2 w-full my-0.5 sm:my-0">
         <button
           onClick={onOpenNewTransaction}
-          className="bg-white hover:bg-slate-100 sm:hover:bg-[#e4e4e7] active:scale-[0.98] text-[#090d16] sm:text-black font-semibold sm:font-bold text-sm sm:text-xs py-3.5 sm:py-2.5 px-4 rounded-2xl sm:rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm sm:shadow-md cursor-pointer"
+          className="bg-white hover:bg-slate-100 sm:hover:bg-[#e4e4e7] active:scale-[0.98] text-[#090d16] sm:text-black font-semibold sm:font-bold text-xs py-2.5 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-sm sm:shadow-md cursor-pointer min-h-[42px]"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>{t('newTransaction')}</span>
+          <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+          <span className="truncate">{t('newTransaction')}</span>
         </button>
         <button
           onClick={onOpenSettleUp}
-          className="bg-[#0c1220] sm:bg-[#18181b] hover:bg-[#131b2e] sm:hover:bg-[#27272a] border border-[#1e293b] sm:border-[#27272a] text-white sm:text-[#fafafa] font-semibold sm:font-bold text-sm sm:text-xs py-3.5 sm:py-2.5 px-4 rounded-2xl sm:rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
+          className="bg-[#0c1220] sm:bg-[#18181b] hover:bg-[#131b2e] sm:hover:bg-[#27272a] border border-[#1e293b] sm:border-[#27272a] text-white sm:text-[#fafafa] font-semibold sm:font-bold text-xs py-2.5 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer active:scale-[0.98] min-h-[42px]"
         >
-          <ArrowUpDown className="w-4 h-4 text-[#10b981] sm:text-emerald-400" />
-          <span>{t('settleUp')}</span>
+          <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#10b981] sm:text-emerald-400" />
+          <span className="truncate">{t('settleUp')}</span>
         </button>
       </div>
 

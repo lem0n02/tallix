@@ -5,8 +5,6 @@ import {
   Activity,
   Edit3,
   LogOut,
-  Menu,
-  X,
   Globe,
   User,
   Users
@@ -62,23 +60,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="h-14 sm:h-16 border-b border-[#1e293b] sm:border-[#27272a] bg-[#060a14]/90 sm:bg-[#09090b]/80 backdrop-blur-md flex items-center justify-between px-3 sm:px-6 sticky top-0 z-20">
-      {/* Left: Mobile Menu Toggle & Greeting */}
+      {/* Left: User Greeting */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-        {onToggleMobileMenu && (
-          <button
-            onClick={onToggleMobileMenu}
-            className="md:hidden p-1.5 sm:p-2 text-[#a1a1aa] hover:text-white bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] rounded-lg transition-colors cursor-pointer shrink-0"
-            aria-label="Toggle Navigation Menu"
-          >
-            {isMobileMenuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" />}
-          </button>
-        )}
-
         {/* Welcome Speech */}
         <div className="flex flex-col min-w-0">
           <h2 className="text-xs sm:text-sm font-semibold text-[#fafafa] flex items-center gap-1.5 truncate">
             <span>{t('welcomeBack')}</span>
-            <span className="text-blue-400 font-bold truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">{user?.name || 'Staff Engineer'}</span>
+            <span className="text-blue-400 font-bold truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">{user?.name || 'Staff Engineer'}</span>
             <span className="hidden xs:inline">👋</span>
           </h2>
           <p className="text-[10px] sm:text-[11px] text-[#a1a1aa] hidden sm:block">

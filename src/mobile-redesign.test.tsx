@@ -3,6 +3,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { DashboardView } from './views/DashboardView';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { Header } from './components/Header';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { Expense, UserProfile } from './types';
 
@@ -159,7 +160,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('Details');
   });
 
-  it('renders MobileBottomNav with all 6 items including Home, Personal Experiences, Shared Group, Analytics, Copilot, and user initials', () => {
+  it('renders MobileBottomNav with exactly 5 items (Home, Personal Experiences, Shared Group, Analytics, Talix AI Copilot) and no bottom avatar', () => {
     const html = renderToString(
       <MobileBottomNav
         activeTab="dashboard"
@@ -169,7 +170,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
       />
     );
 
-    // Verify 6 items are present
+    // Verify 5 items are present
     expect(html).toContain('Home');
     expect(html).toContain('Personal');
     expect(html).toContain('Experiences');
@@ -178,6 +179,59 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('Analytics');
     expect(html).toContain('Talix AI');
     expect(html).toContain('Copilot');
-    expect(html).toContain('LE'); // Initials of Lemon
+
+    // Verify bottom avatar is removed
+    expect(html).not.toContain('LE');
+    expect(html).toContain('grid-cols-5');
+  });
+
+  it('renders mobile header with user greeting, status indicator, EN switcher, and profile avatar, without hamburger menu', () => {
+    const html = renderToString(
+      <Header
+        onOpenNewTransaction={vi.fn()}
+        onOpenCommandPalette={vi.fn()}
+        user={mockUser}
+        onOpenEditProfile={vi.fn()}
+        onLogout={vi.fn()}
+        lang="en"
+        onLangChange={vi.fn()}
+      />
+    );
+
+    // Verify greeting and user name
+    expect(html).toContain('Welcome back');
+    expect(html).toContain('Lemon');
+
+    // Verify EN language switcher
+    expect(html).toContain('EN');
+
+    // Verify Top-Right Profile avatar
+    expect(html).toContain('Account Menu');
+    expect(html).toContain('LE');
+
+    // Verify hamburger menu button is NOT rendered
+    expect(html).not.toContain('Toggle Navigation Menu');
+  });
+
+  it('renders metrics grid with full-width Total Expenses and side-by-side Owed To You and You Owe cards', () => {
+    const html = renderToString(
+      <LanguageProvider>
+        <DashboardView
+          user={mockUser}
+          expenses={mockExpenses}
+          onOpenNewTransaction={vi.fn()}
+          onOpenSettleUp={vi.fn()}
+          onOpenCreateGroup={vi.fn()}
+          onOpenJoinGroup={vi.fn()}
+        />
+      </LanguageProvider>
+    );
+
+    // Verify grid configuration: grid-cols-2 on mobile, grid-cols-3 on desktop
+    expect(html).toContain('grid grid-cols-2 sm:grid-cols-3');
+    // Total Expenses spans 2 columns on mobile, 1 on desktop
+    expect(html).toContain('col-span-2 sm:col-span-1');
+    // Owed to You and You Owe are col-span-1
+    expect(html).toContain('col-span-1');
   });
 });

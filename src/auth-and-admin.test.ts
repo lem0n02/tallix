@@ -236,4 +236,12 @@ describe('Authoritative User Registration & Admin D1 Architecture', () => {
       expect(result.user?.email).toBe('offline-cached@tallix.prod');
     });
   });
+
+  describe('Admin Panel Auto-Refresh Policy (1-Hour Policy)', () => {
+    it('enforces ADMIN_AUTO_REFRESH_INTERVAL_MS to be exactly 1 hour (3,600,000 ms)', async () => {
+      const { ADMIN_AUTO_REFRESH_INTERVAL_MS } = await import('./views/AdminView');
+      expect(ADMIN_AUTO_REFRESH_INTERVAL_MS).toBe(3600000);
+      expect(ADMIN_AUTO_REFRESH_INTERVAL_MS).toBe(60 * 60 * 1000);
+    });
+  });
 });
