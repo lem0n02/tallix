@@ -23,8 +23,8 @@ export interface Env {
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Device-Id, X-Admin-Email',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Device-Id, X-Admin-Email, X-User-Id, X-User-Email',
 };
 
 function jsonResponse(data: any, status = 200) {
@@ -256,12 +256,13 @@ export default {
 
           const cleanEmail = email.trim().toLowerCase();
 
-          // Query user from Cloudflare D1
+          // Query user from Cloudflare D1 with avatar_url and monthly_budget
           let user: any = null;
           try {
             user = await env.DB.prepare(`
               SELECT id, name, email, password_hash, system_role, role, title,
-                     role_title, department, avatar_gradient, status, created_at, updated_at
+                     role_title, department, avatar_gradient, avatar_url, monthly_budget,
+                     status, created_at, updated_at
               FROM users
               WHERE LOWER(email) = LOWER(?)
               LIMIT 1
@@ -302,6 +303,7 @@ export default {
 
           const userSystemRole = user.system_role === 'Admin' ? 'Admin' : 'User';
           const userRoleTitle = user.role_title || user.title || (userSystemRole === 'Admin' ? 'Super Administrator' : 'Financial Member');
+          const userBudget = user.monthly_budget !== null && user.monthly_budget !== undefined ? Number(user.monthly_budget) : 25000;
 
           // Return sanitized user session profile (NO passwords, NO password hashes)
           return jsonResponse({
@@ -316,10 +318,12 @@ export default {
               roleTitle: userRoleTitle,
               department: user.department || (userSystemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
               avatarGradient: user.avatar_gradient || 'from-emerald-500 to-teal-500',
+              avatarUrl: user.avatar_url || null,
               status: user.status || 'Active',
               createdAt: user.created_at,
               updatedAt: user.updated_at,
-              liquidityLimit: 120000,
+              monthlyBudget: userBudget,
+              liquidityLimit: userBudget,
               currentLiquidity: 0,
               monthlyBurnRate: 0,
             },
@@ -327,6 +331,250 @@ export default {
         } catch (err: any) {
           console.error('[Login API Error]', err);
           return jsonResponse({ success: false, error: err?.message || 'Authentication failed.' }, 500);
+        }
+      }
+
+      // 4a. Profile Retrieval Endpoint: GET /api/auth/profile
+      // Authoritative profile retrieval from Cloudflare D1
+      if (url.pathname === '/api/auth/profile' && request.method === 'GET') {
+        try {
+          const authHeader = request.headers.get('Authorization') || '';
+          const headerUserId = request.headers.get('X-User-Id') || '';
+          const headerUserEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
+          const queryUserId = url.searchParams.get('userId') || '';
+          const queryEmail = (url.searchParams.get('email') || '').trim().toLowerCase();
+
+          let targetUserId = headerUserId || queryUserId;
+          let targetEmail = headerUserEmail || queryEmail;
+          if (!targetUserId && authHeader.startsWith('Bearer ')) {
+            const tokenVal = authHeader.substring(7).trim();
+            if (tokenVal.startsWith('usr_')) {
+              targetUserId = tokenVal;
+            }
+          }
+
+          if (!targetUserId && !targetEmail) {
+            return jsonResponse({ success: false, error: 'Unauthorized: User identifier required.' }, 401);
+          }
+
+          let user: any = null;
+          try {
+            if (targetUserId) {
+              user = await env.DB.prepare(`
+                SELECT id, name, email, system_role, role, title, role_title, department,
+                       avatar_gradient, avatar_url, monthly_budget, status, created_at, updated_at
+                FROM users WHERE id = ? LIMIT 1
+              `).bind(targetUserId).first<any>();
+            } else {
+              user = await env.DB.prepare(`
+                SELECT id, name, email, system_role, role, title, role_title, department,
+                       avatar_gradient, avatar_url, monthly_budget, status, created_at, updated_at
+                FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
+              `).bind(targetEmail).first<any>();
+            }
+          } catch (queryErr: any) {
+            if (targetUserId) {
+              user = await env.DB.prepare(`
+                SELECT id, name, email, system_role, role, title, department,
+                       avatar_gradient, created_at, updated_at
+                FROM users WHERE id = ? LIMIT 1
+              `).bind(targetUserId).first<any>();
+            } else {
+              user = await env.DB.prepare(`
+                SELECT id, name, email, system_role, role, title, department,
+                       avatar_gradient, created_at, updated_at
+                FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
+              `).bind(targetEmail).first<any>();
+            }
+          }
+
+          if (!user) {
+            return jsonResponse({ success: false, error: 'User profile not found.' }, 404);
+          }
+
+          const userSystemRole = user.system_role === 'Admin' ? 'Admin' : 'User';
+          const userRoleTitle = user.role_title || user.title || (userSystemRole === 'Admin' ? 'Super Administrator' : 'Financial Member');
+          const budget = user.monthly_budget !== null && user.monthly_budget !== undefined ? Number(user.monthly_budget) : 25000;
+
+          return jsonResponse({
+            success: true,
+            source: 'Cloudflare D1',
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              systemRole: userSystemRole,
+              role: userSystemRole === 'Admin' ? userRoleTitle : 'User Member',
+              title: userRoleTitle,
+              roleTitle: userRoleTitle,
+              department: user.department || (userSystemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
+              avatarGradient: user.avatar_gradient || 'from-emerald-500 to-teal-500',
+              avatarUrl: user.avatar_url || null,
+              monthlyBudget: budget,
+              liquidityLimit: budget,
+              status: user.status || 'Active',
+              createdAt: user.created_at,
+              updatedAt: user.updated_at,
+              currentLiquidity: 0,
+              monthlyBurnRate: 0,
+            },
+          });
+        } catch (err: any) {
+          console.error('[Profile GET API Error]', err);
+          return jsonResponse({ success: false, error: err?.message || 'Failed to retrieve profile.' }, 500);
+        }
+      }
+
+      // 4b. Profile Update Endpoint: PATCH /api/auth/profile
+      // Authoritative profile update in Cloudflare D1
+      // Strictly restricted to editable fields: avatarUrl (picture) & monthlyBudget
+      // Strictly protects identity/role fields: full name, email, role/admin status, password hash
+      if (url.pathname === '/api/auth/profile' && request.method === 'PATCH') {
+        try {
+          const authHeader = request.headers.get('Authorization') || '';
+          const headerUserId = request.headers.get('X-User-Id') || '';
+          const headerUserEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
+
+          const body: any = await request.json();
+          const { userId: bodyUserId, email: bodyEmail, avatarUrl, monthlyBudget, liquidityLimit } = body || {};
+
+          let targetUserId = headerUserId || bodyUserId || '';
+          let targetEmail = headerUserEmail || bodyEmail || '';
+
+          if (!targetUserId && authHeader.startsWith('Bearer ')) {
+            const tokenVal = authHeader.substring(7).trim();
+            if (tokenVal.startsWith('usr_')) {
+              targetUserId = tokenVal;
+            }
+          }
+
+          if (!targetUserId && !targetEmail) {
+            return jsonResponse({ success: false, error: 'Unauthorized: User authentication required.' }, 401);
+          }
+
+          // Security: Prevent cross-user privilege escalation if both header and body are supplied
+          if (headerUserId && bodyUserId && headerUserId !== bodyUserId) {
+            return jsonResponse({ success: false, error: 'Forbidden: Cannot modify another user profile.' }, 403);
+          }
+
+          let existingUser: any = null;
+          try {
+            if (targetUserId) {
+              existingUser = await env.DB.prepare('SELECT * FROM users WHERE id = ? LIMIT 1').bind(targetUserId).first<any>();
+            } else {
+              existingUser = await env.DB.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1').bind(targetEmail).first<any>();
+            }
+          } catch (e: any) {
+            console.warn('[D1 Existing User Query Error]', e?.message);
+          }
+
+          if (!existingUser) {
+            return jsonResponse({ success: false, error: 'User account not found.' }, 404);
+          }
+
+          if (existingUser.status === 'Disabled') {
+            return jsonResponse({ success: false, error: 'This user account has been disabled.' }, 403);
+          }
+
+          const resolvedUserId = existingUser.id;
+          const now = new Date().toISOString();
+
+          // Validate and sanitize ONLY editable fields
+          // 1. avatarUrl: string or null
+          let newAvatarUrl: string | null = existingUser.avatar_url || null;
+          if (avatarUrl !== undefined) {
+            newAvatarUrl = avatarUrl && typeof avatarUrl === 'string' && avatarUrl.trim() ? avatarUrl.trim() : null;
+          }
+
+          // 2. monthlyBudget: numeric value >= 0
+          let newMonthlyBudget: number = existingUser.monthly_budget !== null && existingUser.monthly_budget !== undefined
+            ? Number(existingUser.monthly_budget)
+            : 25000;
+          const budgetCandidate = monthlyBudget !== undefined ? monthlyBudget : liquidityLimit;
+          if (budgetCandidate !== undefined && budgetCandidate !== null) {
+            const parsed = Number(budgetCandidate);
+            if (!isNaN(parsed) && parsed >= 0) {
+              newMonthlyBudget = Math.round(parsed);
+            }
+          }
+
+          // Update D1 users table
+          try {
+            await env.DB.prepare(`
+              UPDATE users
+              SET avatar_url = ?,
+                  monthly_budget = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `).bind(newAvatarUrl, newMonthlyBudget, now, resolvedUserId).run();
+          } catch (updateErr: any) {
+            console.warn('[D1 Profile Update Fallback]', updateErr?.message);
+            try {
+              await env.DB.prepare('ALTER TABLE users ADD COLUMN avatar_url TEXT').run();
+            } catch {}
+            try {
+              await env.DB.prepare('ALTER TABLE users ADD COLUMN monthly_budget REAL DEFAULT 25000').run();
+            } catch {}
+
+            await env.DB.prepare(`
+              UPDATE users
+              SET avatar_url = ?,
+                  monthly_budget = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `).bind(newAvatarUrl, newMonthlyBudget, now, resolvedUserId).run();
+          }
+
+          // Fetch fresh authoritative updated row from Cloudflare D1
+          let updatedUser: any = null;
+          try {
+            updatedUser = await env.DB.prepare(`
+              SELECT id, name, email, system_role, role, title, role_title, department,
+                     avatar_gradient, avatar_url, monthly_budget, status, created_at, updated_at
+              FROM users WHERE id = ? LIMIT 1
+            `).bind(resolvedUserId).first<any>();
+          } catch {}
+
+          if (!updatedUser) {
+            updatedUser = {
+              ...existingUser,
+              avatar_url: newAvatarUrl,
+              monthly_budget: newMonthlyBudget,
+              updated_at: now,
+            };
+          }
+
+          const userSystemRole = updatedUser.system_role === 'Admin' ? 'Admin' : 'User';
+          const userRoleTitle = updatedUser.role_title || updatedUser.title || (userSystemRole === 'Admin' ? 'Super Administrator' : 'Financial Member');
+          const finalBudget = updatedUser.monthly_budget !== null && updatedUser.monthly_budget !== undefined ? Number(updatedUser.monthly_budget) : newMonthlyBudget;
+
+          return jsonResponse({
+            success: true,
+            source: 'Cloudflare D1',
+            message: 'Profile updated successfully in Cloudflare D1.',
+            user: {
+              id: updatedUser.id,
+              name: updatedUser.name, // Protected: preserved from authoritative record
+              email: updatedUser.email, // Protected: preserved from authoritative record
+              systemRole: userSystemRole, // Protected: preserved
+              role: userSystemRole === 'Admin' ? userRoleTitle : 'User Member',
+              title: userRoleTitle,
+              roleTitle: userRoleTitle,
+              department: updatedUser.department || (userSystemRole === 'Admin' ? 'Management' : 'Personal Workspace'),
+              avatarGradient: updatedUser.avatar_gradient || 'from-emerald-500 to-teal-500',
+              avatarUrl: updatedUser.avatar_url || newAvatarUrl,
+              monthlyBudget: finalBudget,
+              liquidityLimit: finalBudget,
+              status: updatedUser.status || 'Active',
+              createdAt: updatedUser.created_at,
+              updatedAt: updatedUser.updated_at,
+              currentLiquidity: 0,
+              monthlyBurnRate: 0,
+            },
+          }, 200);
+        } catch (err: any) {
+          console.error('[Profile PATCH API Error]', err);
+          return jsonResponse({ success: false, error: err?.message || 'Failed to update profile.' }, 500);
         }
       }
 
@@ -374,6 +622,9 @@ export default {
             title: row.title || row.role_title || 'Financial Member',
             department: row.department || 'Personal Workspace',
             avatarGradient: row.avatar_gradient || 'from-blue-600 to-indigo-600',
+            avatarUrl: row.avatar_url || undefined,
+            monthlyBudget: row.monthly_budget !== null && row.monthly_budget !== undefined ? Number(row.monthly_budget) : 25000,
+            liquidityLimit: row.monthly_budget !== null && row.monthly_budget !== undefined ? Number(row.monthly_budget) : 25000,
             status: row.status || 'Active',
             createdAt: row.created_at,
             updatedAt: row.updated_at,
@@ -630,8 +881,57 @@ export default {
                 const userRoleTitle = usr.roleTitle || usr.title || 'Financial Member';
                 const cleanEmail = (usr.email || '').trim().toLowerCase();
                 const pwdHash = usr.passwordHash || (usr.password ? await hashPassword(usr.password) : null);
+                const avatarVal = usr.avatarUrl !== undefined ? (usr.avatarUrl || null) : (usr.avatar_url !== undefined ? (usr.avatar_url || null) : null);
+                const rawBudget = usr.monthlyBudget !== undefined ? usr.monthlyBudget : (usr.liquidityLimit !== undefined ? usr.liquidityLimit : usr.monthly_budget);
+                const budgetVal = rawBudget !== undefined && rawBudget !== null ? Number(rawBudget) : 25000;
 
                 try {
+                  await env.DB.prepare(`
+                    INSERT INTO users (
+                      id, name, email, password_hash, system_role, role,
+                      title, role_title, department, avatar_gradient, avatar_url, monthly_budget, status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                      name = excluded.name,
+                      email = excluded.email,
+                      system_role = excluded.system_role,
+                      role = excluded.role,
+                      title = excluded.title,
+                      role_title = excluded.role_title,
+                      department = excluded.department,
+                      avatar_gradient = excluded.avatar_gradient,
+                      avatar_url = COALESCE(excluded.avatar_url, users.avatar_url),
+                      monthly_budget = COALESCE(excluded.monthly_budget, users.monthly_budget),
+                      status = excluded.status,
+                      updated_at = excluded.updated_at
+                  `)
+                    .bind(
+                      usr.id,
+                      usr.name || 'User',
+                      cleanEmail,
+                      pwdHash,
+                      usr.systemRole || 'User',
+                      usr.role || 'User Member',
+                      userRoleTitle,
+                      userRoleTitle,
+                      usr.department || 'Personal Workspace',
+                      usr.avatarGradient || 'from-blue-600 to-indigo-600',
+                      avatarVal,
+                      budgetVal,
+                      userStatus,
+                      usr.createdAt || now,
+                      now
+                    )
+                    .run();
+                } catch {
+                  try {
+                    await env.DB.prepare('ALTER TABLE users ADD COLUMN avatar_url TEXT').run();
+                  } catch {}
+                  try {
+                    await env.DB.prepare('ALTER TABLE users ADD COLUMN monthly_budget REAL DEFAULT 25000').run();
+                  } catch {}
+
+                  // Fallback for earlier database schema
                   await env.DB.prepare(`
                     INSERT INTO users (
                       id, name, email, password_hash, system_role, role,
@@ -661,37 +961,6 @@ export default {
                       usr.department || 'Personal Workspace',
                       usr.avatarGradient || 'from-blue-600 to-indigo-600',
                       userStatus,
-                      usr.createdAt || now,
-                      now
-                    )
-                    .run();
-                } catch {
-                  // Fallback for earlier database schema
-                  await env.DB.prepare(`
-                    INSERT INTO users (
-                      id, name, email, password_hash, system_role, role,
-                      title, department, avatar_gradient, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                      name = excluded.name,
-                      email = excluded.email,
-                      system_role = excluded.system_role,
-                      role = excluded.role,
-                      title = excluded.title,
-                      department = excluded.department,
-                      avatar_gradient = excluded.avatar_gradient,
-                      updated_at = excluded.updated_at
-                  `)
-                    .bind(
-                      usr.id,
-                      usr.name || 'User',
-                      cleanEmail,
-                      pwdHash,
-                      usr.systemRole || 'User',
-                      usr.role || 'User Member',
-                      userRoleTitle,
-                      usr.department || 'Personal Workspace',
-                      usr.avatarGradient || 'from-blue-600 to-indigo-600',
                       usr.createdAt || now,
                       now
                     )
@@ -854,6 +1123,9 @@ export default {
           title: row.title || row.role_title || 'Financial Member',
           department: row.department || 'Personal Workspace',
           avatarGradient: row.avatar_gradient || 'from-blue-600 to-indigo-600',
+          avatarUrl: row.avatar_url || undefined,
+          monthlyBudget: row.monthly_budget !== null && row.monthly_budget !== undefined ? Number(row.monthly_budget) : 25000,
+          liquidityLimit: row.monthly_budget !== null && row.monthly_budget !== undefined ? Number(row.monthly_budget) : 25000,
           status: row.status || 'Active',
           createdAt: row.created_at,
           updatedAt: row.updated_at,

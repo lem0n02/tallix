@@ -51,9 +51,40 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAvatarUrl(reader.result);
+    reader.onload = (uploadEvent) => {
+      const result = uploadEvent.target?.result;
+      if (typeof result === 'string') {
+        // Optimize and compress avatar image for fast persistence and cross-device sync
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 256;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimized = canvas.toDataURL('image/jpeg', 0.85);
+            setAvatarUrl(optimized);
+          } else {
+            setAvatarUrl(result);
+          }
+        };
+        img.onerror = () => {
+          setAvatarUrl(result);
+        };
+        img.src = result;
       }
     };
     reader.readAsDataURL(file);
@@ -69,6 +100,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     const updatedUser: UserProfile = {
       ...user,
       avatarUrl: avatarUrl ? avatarUrl : undefined,
+      monthlyBudget: validBudget,
       liquidityLimit: validBudget,
     };
 

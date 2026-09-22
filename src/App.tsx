@@ -34,6 +34,7 @@ import { EditExpenseModal } from './components/EditExpenseModal';
 import { LocalRepository } from './services/localRepository';
 import { generateEntityId } from './services/idGenerator';
 import { syncEngine } from './services/syncEngine';
+import { updateUserProfile, fetchUserProfileFromD1 } from './services/authService';
 import { toPaisa, parseExactMoney, splitExactAmount } from './utils/money';
 
 export type AppRoute = 'landing' | 'signin' | 'signup' | 'forgot-password' | 'app';
@@ -393,6 +394,32 @@ export default function App() {
       setSettlements(allStl);
       if (allUsr && allUsr.length > 0) {
         setRegisteredUsers(allUsr);
+
+        // When remote changes from another device arrive, synchronize current authenticated user's profile
+        setUser((currentUser) => {
+          if (!currentUser || !currentUser.id || currentUser.isGuest) return currentUser;
+          const remoteMe = allUsr.find((u) => u.id === currentUser.id || (u.email && u.email.toLowerCase() === currentUser.email.toLowerCase()));
+          if (remoteMe) {
+            const remoteBudget = remoteMe.monthlyBudget !== undefined ? Number(remoteMe.monthlyBudget) : (remoteMe.liquidityLimit !== undefined ? Number(remoteMe.liquidityLimit) : currentUser.liquidityLimit);
+            const remoteAvatar = remoteMe.avatarUrl || undefined;
+            const currentBudget = currentUser.monthlyBudget !== undefined ? currentUser.monthlyBudget : currentUser.liquidityLimit;
+            if (remoteAvatar !== currentUser.avatarUrl || remoteBudget !== currentBudget) {
+              const updatedProfile: UserProfile = {
+                ...currentUser,
+                avatarUrl: remoteAvatar,
+                monthlyBudget: remoteBudget,
+                liquidityLimit: remoteBudget,
+              };
+              try {
+                localStorage.setItem('tallix_user', JSON.stringify(updatedProfile));
+              } catch {
+                // Ignore storage quota
+              }
+              return updatedProfile;
+            }
+          }
+          return currentUser;
+        });
       }
     });
 
@@ -401,6 +428,39 @@ export default function App() {
       unsubscribeData();
     };
   }, []);
+
+  // Cross-device profile sync on authenticated session startup
+  useEffect(() => {
+    if (isAuthenticated && !isGuestSession && user?.id) {
+      fetchUserProfileFromD1(user.id, user.email).then((freshProfile) => {
+        if (freshProfile) {
+          setUser((curr) => {
+            const currentBudget = curr.monthlyBudget !== undefined ? curr.monthlyBudget : curr.liquidityLimit;
+            const freshBudget = freshProfile.monthlyBudget !== undefined ? freshProfile.monthlyBudget : freshProfile.liquidityLimit;
+            const isDifferent =
+              freshProfile.avatarUrl !== curr.avatarUrl ||
+              freshBudget !== currentBudget;
+
+            if (isDifferent) {
+              const updated: UserProfile = {
+                ...curr,
+                avatarUrl: freshProfile.avatarUrl,
+                monthlyBudget: freshBudget,
+                liquidityLimit: freshBudget,
+              };
+              try {
+                localStorage.setItem('tallix_user', JSON.stringify(updated));
+              } catch {
+                // Ignore storage quota
+              }
+              return updated;
+            }
+            return curr;
+          });
+        }
+      }).catch((e) => console.warn('[App] Could not fetch fresh profile from D1:', e));
+    }
+  }, [isAuthenticated, isGuestSession, user?.id]);
 
   // Update syncEngine active user ID
   useEffect(() => {
@@ -494,8 +554,14 @@ export default function App() {
   }, [activeTab, user]);
 
   // Handlers
-  const handleSaveUser = (updatedUser: UserProfile) => {
+  const handleSaveUser = async (updatedUser: UserProfile) => {
     setUser(updatedUser);
+    try {
+      localStorage.setItem('tallix_user', JSON.stringify(updatedUser));
+    } catch {
+      // Ignore localStorage errors
+    }
+
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
@@ -506,6 +572,49 @@ export default function App() {
       },
       ...prev,
     ]);
+
+    // Update in registeredUsers local state
+    setRegisteredUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === updatedUser.id || (u.email && u.email.toLowerCase() === updatedUser.email.toLowerCase())) {
+          return {
+            ...u,
+            avatarUrl: updatedUser.avatarUrl,
+            monthlyBudget: updatedUser.monthlyBudget ?? updatedUser.liquidityLimit,
+            liquidityLimit: updatedUser.liquidityLimit ?? updatedUser.monthlyBudget,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return u;
+      })
+    );
+
+    // Persist to authoritative Cloudflare D1
+    if (!isGuestSession && updatedUser.id) {
+      try {
+        const result = await updateUserProfile({
+          userId: updatedUser.id,
+          email: updatedUser.email,
+          avatarUrl: updatedUser.avatarUrl || null,
+          monthlyBudget: updatedUser.monthlyBudget ?? updatedUser.liquidityLimit,
+          liquidityLimit: updatedUser.liquidityLimit ?? updatedUser.monthlyBudget,
+        });
+
+        if (result.success && result.user) {
+          setUser(result.user);
+          try {
+            localStorage.setItem('tallix_user', JSON.stringify(result.user));
+          } catch {
+            // Ignore storage quota
+          }
+        }
+
+        // Trigger background sync engine to push any queued mutations
+        syncEngine.triggerSync().catch(() => {});
+      } catch (err) {
+        console.warn('[App] Profile save persistence error:', err);
+      }
+    }
   };
 
   const handleRegisterUser = (newUser: RegisteredUser) => {

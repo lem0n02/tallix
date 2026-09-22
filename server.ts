@@ -173,6 +173,7 @@ async function startServer() {
 
       const userSystemRole = matchedUser.systemRole === "Admin" ? "Admin" : "User";
       const userRoleTitle = matchedUser.roleTitle || matchedUser.title || (userSystemRole === "Admin" ? "Super Administrator" : "Financial Member");
+      const userBudget = matchedUser.monthlyBudget !== undefined ? Number(matchedUser.monthlyBudget) : (matchedUser.liquidityLimit !== undefined ? Number(matchedUser.liquidityLimit) : 25000);
 
       return res.status(200).json({
         success: true,
@@ -186,16 +187,196 @@ async function startServer() {
           roleTitle: userRoleTitle,
           department: matchedUser.department || (userSystemRole === "Admin" ? "Management" : "Personal Workspace"),
           avatarGradient: matchedUser.avatarGradient || "from-emerald-500 to-teal-500",
+          avatarUrl: matchedUser.avatarUrl || null,
           status: matchedUser.status || "Active",
           createdAt: matchedUser.createdAt,
           updatedAt: matchedUser.updatedAt,
-          liquidityLimit: 120000,
+          monthlyBudget: userBudget,
+          liquidityLimit: userBudget,
           currentLiquidity: 0,
           monthlyBurnRate: 0,
         },
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message || "Authentication failed." });
+    }
+  });
+
+  // User Profile Retrieval: GET /api/auth/profile
+  app.get("/api/auth/profile", (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const headerUserId = (req.headers["x-user-id"] as string) || "";
+      const headerUserEmail = ((req.headers["x-user-email"] as string) || "").trim().toLowerCase();
+      const queryUserId = (req.query.userId as string) || "";
+      const queryEmail = ((req.query.email as string) || "").trim().toLowerCase();
+
+      let targetUserId = headerUserId || queryUserId;
+      let targetEmail = headerUserEmail || queryEmail;
+      if (!targetUserId && authHeader.startsWith("Bearer ")) {
+        const tokenVal = authHeader.substring(7).trim();
+        if (tokenVal.startsWith("usr_")) {
+          targetUserId = tokenVal;
+        }
+      }
+
+      if (!targetUserId && !targetEmail) {
+        return res.status(401).json({ success: false, error: "Unauthorized: User identifier required." });
+      }
+
+      let matchedUser: any = null;
+      if (targetUserId && serverRegisteredUsers.has(targetUserId)) {
+        matchedUser = serverRegisteredUsers.get(targetUserId);
+      } else {
+        for (const u of serverRegisteredUsers.values()) {
+          if (
+            (targetUserId && u.id === targetUserId) ||
+            (targetEmail && u.email && u.email.toLowerCase() === targetEmail)
+          ) {
+            matchedUser = u;
+            break;
+          }
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(404).json({ success: false, error: "User profile not found." });
+      }
+
+      const userSystemRole = matchedUser.systemRole === "Admin" ? "Admin" : "User";
+      const userRoleTitle = matchedUser.roleTitle || matchedUser.title || (userSystemRole === "Admin" ? "Super Administrator" : "Financial Member");
+      const userBudget = matchedUser.monthlyBudget !== undefined ? Number(matchedUser.monthlyBudget) : (matchedUser.liquidityLimit !== undefined ? Number(matchedUser.liquidityLimit) : 25000);
+
+      return res.json({
+        success: true,
+        source: "Server Store",
+        user: {
+          id: matchedUser.id,
+          name: matchedUser.name,
+          email: matchedUser.email,
+          systemRole: userSystemRole,
+          role: userSystemRole === "Admin" ? userRoleTitle : "User Member",
+          title: userRoleTitle,
+          roleTitle: userRoleTitle,
+          department: matchedUser.department || (userSystemRole === "Admin" ? "Management" : "Personal Workspace"),
+          avatarGradient: matchedUser.avatarGradient || "from-emerald-500 to-teal-500",
+          avatarUrl: matchedUser.avatarUrl || null,
+          monthlyBudget: userBudget,
+          liquidityLimit: userBudget,
+          status: matchedUser.status || "Active",
+          createdAt: matchedUser.createdAt,
+          updatedAt: matchedUser.updatedAt,
+          currentLiquidity: 0,
+          monthlyBurnRate: 0,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "Failed to retrieve profile." });
+    }
+  });
+
+  // User Profile Update: PATCH /api/auth/profile
+  // Strictly restricted to editable fields: avatarUrl & monthlyBudget
+  app.patch("/api/auth/profile", (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const headerUserId = (req.headers["x-user-id"] as string) || "";
+      const headerUserEmail = ((req.headers["x-user-email"] as string) || "").trim().toLowerCase();
+
+      const { userId: bodyUserId, email: bodyEmail, avatarUrl, monthlyBudget, liquidityLimit } = req.body || {};
+
+      let targetUserId = headerUserId || bodyUserId || "";
+      let targetEmail = headerUserEmail || bodyEmail || "";
+      if (!targetUserId && authHeader.startsWith("Bearer ")) {
+        const tokenVal = authHeader.substring(7).trim();
+        if (tokenVal.startsWith("usr_")) {
+          targetUserId = tokenVal;
+        }
+      }
+
+      if (!targetUserId && !targetEmail) {
+        return res.status(401).json({ success: false, error: "Unauthorized: User authentication required." });
+      }
+
+      let matchedUser: any = null;
+      if (targetUserId && serverRegisteredUsers.has(targetUserId)) {
+        matchedUser = serverRegisteredUsers.get(targetUserId);
+      } else {
+        for (const u of serverRegisteredUsers.values()) {
+          if (
+            (targetUserId && u.id === targetUserId) ||
+            (targetEmail && u.email && u.email.toLowerCase() === targetEmail)
+          ) {
+            matchedUser = u;
+            break;
+          }
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(404).json({ success: false, error: "User account not found." });
+      }
+
+      if (matchedUser.status === "Disabled") {
+        return res.status(403).json({ success: false, error: "This user account has been disabled." });
+      }
+
+      const now = new Date().toISOString();
+
+      // Only update editable fields: avatarUrl & monthlyBudget
+      let newAvatarUrl = matchedUser.avatarUrl || null;
+      if (avatarUrl !== undefined) {
+        newAvatarUrl = avatarUrl && typeof avatarUrl === "string" && avatarUrl.trim() ? avatarUrl.trim() : null;
+      }
+
+      let newBudget = matchedUser.monthlyBudget !== undefined ? Number(matchedUser.monthlyBudget) : (matchedUser.liquidityLimit !== undefined ? Number(matchedUser.liquidityLimit) : 25000);
+      const budgetCandidate = monthlyBudget !== undefined ? monthlyBudget : liquidityLimit;
+      if (budgetCandidate !== undefined && budgetCandidate !== null) {
+        const parsed = Number(budgetCandidate);
+        if (!isNaN(parsed) && parsed >= 0) {
+          newBudget = Math.round(parsed);
+        }
+      }
+
+      const updatedUser = {
+        ...matchedUser,
+        avatarUrl: newAvatarUrl,
+        monthlyBudget: newBudget,
+        liquidityLimit: newBudget,
+        updatedAt: now,
+      };
+
+      serverRegisteredUsers.set(matchedUser.id, updatedUser);
+
+      const userSystemRole = updatedUser.systemRole === "Admin" ? "Admin" : "User";
+      const userRoleTitle = updatedUser.roleTitle || updatedUser.title || (userSystemRole === "Admin" ? "Super Administrator" : "Financial Member");
+
+      return res.status(200).json({
+        success: true,
+        source: "Server Store",
+        message: "Profile updated successfully.",
+        user: {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          systemRole: userSystemRole,
+          role: userSystemRole === "Admin" ? userRoleTitle : "User Member",
+          title: userRoleTitle,
+          roleTitle: userRoleTitle,
+          department: updatedUser.department || (userSystemRole === "Admin" ? "Management" : "Personal Workspace"),
+          avatarGradient: updatedUser.avatarGradient || "from-emerald-500 to-teal-500",
+          avatarUrl: updatedUser.avatarUrl || null,
+          monthlyBudget: newBudget,
+          liquidityLimit: newBudget,
+          status: updatedUser.status || "Active",
+          createdAt: updatedUser.createdAt,
+          updatedAt: updatedUser.updatedAt,
+          currentLiquidity: 0,
+          monthlyBurnRate: 0,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "Failed to update profile." });
     }
   });
 
@@ -226,6 +407,9 @@ async function startServer() {
           title: sanitized.title || sanitized.roleTitle || "Financial Member",
           department: sanitized.department || "Personal Workspace",
           avatarGradient: sanitized.avatarGradient || "from-blue-600 to-indigo-600",
+          avatarUrl: sanitized.avatarUrl || undefined,
+          monthlyBudget: sanitized.monthlyBudget !== undefined ? Number(sanitized.monthlyBudget) : (sanitized.liquidityLimit !== undefined ? Number(sanitized.liquidityLimit) : 25000),
+          liquidityLimit: sanitized.monthlyBudget !== undefined ? Number(sanitized.monthlyBudget) : (sanitized.liquidityLimit !== undefined ? Number(sanitized.liquidityLimit) : 25000),
           status: sanitized.status || "Active",
           createdAt: sanitized.createdAt,
           updatedAt: sanitized.updatedAt || sanitized.createdAt,
@@ -332,11 +516,17 @@ async function startServer() {
             if (mut.operation === "CREATE" || mut.operation === "UPDATE") {
               const pwdHash = usr.passwordHash || (usr.password ? crypto.createHash("sha256").update(usr.password).digest("hex") : null);
               const { password: _, ...cleanPayload } = usr;
+              const existing = serverRegisteredUsers.get(usr.id) || {};
+              const budgetVal = usr.monthlyBudget !== undefined ? usr.monthlyBudget : (usr.liquidityLimit !== undefined ? usr.liquidityLimit : existing.monthlyBudget);
               serverRegisteredUsers.set(usr.id, {
+                ...existing,
                 ...cleanPayload,
-                passwordHash: pwdHash,
-                status: usr.status === "Disabled" ? "Disabled" : "Active",
-                roleTitle: usr.roleTitle || usr.title || "Financial Member",
+                passwordHash: pwdHash || existing.passwordHash,
+                avatarUrl: usr.avatarUrl !== undefined ? (usr.avatarUrl || null) : (existing.avatarUrl || null),
+                monthlyBudget: budgetVal !== undefined ? Number(budgetVal) : 25000,
+                liquidityLimit: budgetVal !== undefined ? Number(budgetVal) : 25000,
+                status: usr.status === "Disabled" ? "Disabled" : (existing.status || "Active"),
+                roleTitle: usr.roleTitle || usr.title || existing.roleTitle || "Financial Member",
                 updatedAt: now,
               });
             } else if (mut.operation === "DELETE") {
@@ -382,7 +572,14 @@ async function startServer() {
       const expenses = Array.from(serverExpenses.values()).filter(filterBySince);
       const groups = Array.from(serverGroups.values()).filter(filterBySince);
       const settlements = Array.from(serverSettlements.values()).filter(filterBySince);
-      const registeredUsers = Array.from(serverRegisteredUsers.values()).filter(filterBySince);
+      const registeredUsers = Array.from(serverRegisteredUsers.values())
+        .filter(filterBySince)
+        .map(({ passwordHash: _, password: __, ...user }) => ({
+          ...user,
+          avatarUrl: user.avatarUrl || undefined,
+          monthlyBudget: user.monthlyBudget !== undefined ? Number(user.monthlyBudget) : (user.liquidityLimit !== undefined ? Number(user.liquidityLimit) : 25000),
+          liquidityLimit: user.monthlyBudget !== undefined ? Number(user.monthlyBudget) : (user.liquidityLimit !== undefined ? Number(user.liquidityLimit) : 25000),
+        }));
 
       return res.json({
         success: true,

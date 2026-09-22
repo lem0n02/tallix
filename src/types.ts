@@ -144,6 +144,8 @@ export interface RegisteredUser {
   department?: string;
   avatarGradient?: string;
   avatarUrl?: string;
+  monthlyBudget?: number;
+  liquidityLimit?: number;
   createdAt: string;
   status: 'Active' | 'Disabled';
   aiCopilotEnabled?: boolean;
