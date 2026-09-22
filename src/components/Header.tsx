@@ -61,25 +61,25 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-16 border-b border-[#27272a] bg-[#09090b]/80 backdrop-blur-md flex items-center justify-between px-3 sm:px-6 sticky top-0 z-20">
+    <header className="h-14 sm:h-16 border-b border-[#1e293b] sm:border-[#27272a] bg-[#060a14]/90 sm:bg-[#09090b]/80 backdrop-blur-md flex items-center justify-between px-3 sm:px-6 sticky top-0 z-20">
       {/* Left: Mobile Menu Toggle & Greeting */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
-            className="md:hidden p-2 text-[#a1a1aa] hover:text-white bg-[#18181b] border border-[#27272a] rounded-lg transition-colors cursor-pointer"
+            className="md:hidden p-1.5 sm:p-2 text-[#a1a1aa] hover:text-white bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] rounded-lg transition-colors cursor-pointer shrink-0"
             aria-label="Toggle Navigation Menu"
           >
-            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {isMobileMenuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" />}
           </button>
         )}
 
         {/* Welcome Speech */}
-        <div className="flex flex-col">
-          <h2 className="text-xs sm:text-sm font-semibold text-[#fafafa] flex items-center gap-1.5">
+        <div className="flex flex-col min-w-0">
+          <h2 className="text-xs sm:text-sm font-semibold text-[#fafafa] flex items-center gap-1.5 truncate">
             <span>{t('welcomeBack')}</span>
-            <span className="text-blue-400 font-bold">{user?.name || 'Staff Engineer'}</span>
-            <span className="inline-block">👋</span>
+            <span className="text-blue-400 font-bold truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">{user?.name || 'Staff Engineer'}</span>
+            <span className="hidden xs:inline">👋</span>
           </h2>
           <p className="text-[10px] sm:text-[11px] text-[#a1a1aa] hidden sm:block">
             {t('overviewSubtext')}
@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right: Actions, Language & User Profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Offline Sync Status Badge */}
         <SyncStatusBadge />
 
@@ -108,16 +108,16 @@ export const Header: React.FC<HeaderProps> = ({
               setShowLangMenu(!showLangMenu);
               setShowDropdown(false);
             }}
-            className="p-1.5 text-[#a1a1aa] hover:text-white bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs"
+            className="p-1.5 text-[#a1a1aa] hover:text-white bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] hover:border-[#3f3f46] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs"
             title="Language Switcher"
           >
-            <Globe className="w-4 h-4 text-emerald-400" />
-            <span className="text-[11px] font-bold uppercase">{lang === 'en' ? 'EN' : 'বাংলা'}</span>
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase">{lang === 'en' ? 'EN' : 'বাংলা'}</span>
           </button>
 
           {showLangMenu && (
-            <div className="absolute right-0 mt-2 w-36 bg-[#18181b] border border-[#27272a] rounded-xl shadow-2xl py-1 z-30 animate-fadeIn">
-              <div className="px-3 py-1 text-[10px] uppercase font-bold text-[#71717a] border-b border-[#27272a]">
+            <div className="absolute right-0 mt-2 w-36 bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] rounded-xl shadow-2xl py-1 z-30 animate-fadeIn">
+              <div className="px-3 py-1 text-[10px] uppercase font-bold text-[#71717a] border-b border-[#1e293b] sm:border-[#27272a]">
                 {t('language')}
               </div>
               <button
@@ -125,8 +125,8 @@ export const Header: React.FC<HeaderProps> = ({
                   onLangChange('en');
                   setShowLangMenu(false);
                 }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#27272a] transition-colors cursor-pointer ${
-                  lang === 'en' ? 'text-blue-400 font-bold bg-[#27272a]/50' : 'text-[#a1a1aa]'
+                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#18181b] transition-colors cursor-pointer ${
+                  lang === 'en' ? 'text-blue-400 font-bold bg-[#18181b]/50' : 'text-[#a1a1aa]'
                 }`}
               >
                 <span>English</span>
@@ -137,8 +137,8 @@ export const Header: React.FC<HeaderProps> = ({
                   onLangChange('bn');
                   setShowLangMenu(false);
                 }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#27272a] transition-colors cursor-pointer ${
-                  lang === 'bn' ? 'text-emerald-400 font-bold bg-[#27272a]/50' : 'text-[#a1a1aa]'
+                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#18181b] transition-colors cursor-pointer ${
+                  lang === 'bn' ? 'text-emerald-400 font-bold bg-[#18181b]/50' : 'text-[#a1a1aa]'
                 }`}
               >
                 <span>বাংলা</span>
@@ -148,14 +148,13 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* New Transaction Button */}
+        {/* New Transaction Button (Desktop header) */}
         <button
           onClick={onOpenNewTransaction}
-          className="bg-white hover:bg-[#e4e4e7] active:scale-95 text-black text-xs font-bold px-2.5 sm:px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+          className="hidden sm:flex bg-white hover:bg-[#e4e4e7] active:scale-95 text-black text-xs font-bold px-2.5 sm:px-3.5 py-2 rounded-lg items-center gap-1.5 transition-all cursor-pointer shadow-sm"
         >
           <Plus className="w-4 h-4" />
-          <span className="hidden xs:inline">{t('newTransaction')}</span>
-          <span className="xs:hidden">{t('add')}</span>
+          <span>{t('newTransaction')}</span>
         </button>
 
         {/* User Profile Quick Menu */}
@@ -166,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
                 setShowDropdown(!showDropdown);
                 setShowLangMenu(false);
               }}
-              className={`w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr ${user.avatarGradient || 'from-emerald-600 to-teal-500'} flex items-center justify-center font-bold text-xs text-white shadow-md border border-[#27272a] hover:border-emerald-500 transition-all cursor-pointer`}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-gradient-to-tr ${user.avatarGradient || 'from-emerald-600 to-teal-500'} flex items-center justify-center font-bold text-xs text-white shadow-md border border-[#27272a] hover:border-emerald-500 transition-all cursor-pointer`}
               title="Account Menu"
             >
               {user.avatarUrl ? (

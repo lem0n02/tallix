@@ -743,23 +743,27 @@ export default {
 
       // 3. Sync Pull (Server -> Client)
       if (url.pathname === '/api/sync/pull' && request.method === 'GET') {
-        const since = url.searchParams.get('since');
+        const rawSince = url.searchParams.get('since');
         const now = new Date().toISOString();
+        // Apply a 10-second safety window on 'since' to eliminate race condition misses at boundary timestamps
+        const since = rawSince
+          ? new Date(Math.max(0, new Date(rawSince).getTime() - 10000)).toISOString()
+          : null;
 
         const expensesStmt = since
-          ? env.DB.prepare('SELECT * FROM expenses WHERE updated_at > ?').bind(since)
+          ? env.DB.prepare('SELECT * FROM expenses WHERE updated_at >= ?').bind(since)
           : env.DB.prepare('SELECT * FROM expenses');
 
         const groupsStmt = since
-          ? env.DB.prepare('SELECT * FROM groups WHERE updated_at > ?').bind(since)
+          ? env.DB.prepare('SELECT * FROM groups WHERE updated_at >= ?').bind(since)
           : env.DB.prepare('SELECT * FROM groups');
 
         const settlementsStmt = since
-          ? env.DB.prepare('SELECT * FROM settlements WHERE updated_at > ?').bind(since)
+          ? env.DB.prepare('SELECT * FROM settlements WHERE updated_at >= ?').bind(since)
           : env.DB.prepare('SELECT * FROM settlements');
 
         const usersStmt = since
-          ? env.DB.prepare('SELECT * FROM users WHERE updated_at > ?').bind(since)
+          ? env.DB.prepare('SELECT * FROM users WHERE updated_at >= ?').bind(since)
           : env.DB.prepare('SELECT * FROM users');
 
         const [expensesRes, groupsRes, settlementsRes, usersRes] = await Promise.all([
@@ -776,13 +780,30 @@ export default {
             deletedExpenseIds.push(row.id);
           } else {
             activeExpenses.push({
-              ...row,
-              isShared: Boolean(row.is_shared),
-              splits: row.splits_json ? JSON.parse(row.splits_json) : undefined,
-              paidByUserId: row.paid_by_user_id,
-              paidByName: row.paid_by_name,
+              id: row.id,
               groupId: row.group_id,
               groupName: row.group_name,
+              isShared: Boolean(row.is_shared),
+              title: row.title,
+              merchant: row.merchant,
+              amount: row.amount,
+              originalAmount: row.amount,
+              amount_paisa: row.amount_paisa,
+              currency: row.currency || 'BDT',
+              category: row.category,
+              paymentMethod: row.payment_method,
+              date: row.date,
+              status: row.status,
+              paidByUserId: row.paid_by_user_id,
+              paidByName: row.paid_by_name,
+              createdBy: row.created_by,
+              createdByEmail: row.created_by_email,
+              splits: row.splits_json ? JSON.parse(row.splits_json) : undefined,
+              receiptUrl: row.receipt_url,
+              notes: row.notes,
+              version: row.version,
+              createdAt: row.created_at,
+              updatedAt: row.updated_at,
             });
           }
         });

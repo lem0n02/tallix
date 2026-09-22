@@ -51,7 +51,13 @@ export const calculateGroupMembersWithBalances = (
     if (exp.splits && exp.splits.length > 0) {
       // Splits exist: use each member's split amount in paisa
       group.members.forEach((m) => {
-        const split = exp.splits?.find((sp) => isMemberMatch(m, sp.userId, sp.userName));
+        const split = exp.splits?.find((sp) =>
+          isMemberMatch(
+            m,
+            sp.userId || (sp as any).memberId,
+            sp.userName || (sp as any).memberName
+          )
+        );
         if (split) {
           memberShares.set(m.id, toPaisa(split.amount));
         } else {

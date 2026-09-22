@@ -84,7 +84,12 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
 
   const { t, formatCurrency, formatNumber, formatDate } = useLanguage();
 
-  const activeGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
+  const activeGroup =
+    groups.find(
+      (g) =>
+        g.id === selectedGroupId ||
+        (selectedGroupId && g.inviteCode && g.inviteCode.toUpperCase() === selectedGroupId.toUpperCase())
+    ) || groups[0];
 
   const handleCopyInvite = (code: string) => {
     navigator.clipboard.writeText(code);

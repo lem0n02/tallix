@@ -39,9 +39,9 @@ interface DashboardViewProps {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   user,
-  expenses,
-  groups,
-  settlements,
+  expenses = [],
+  groups = [],
+  settlements = [],
   onSelectTab,
   onOpenNewTransaction,
   onOpenSettleUp,
@@ -55,23 +55,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const { t, formatCurrency, formatNumber, formatDate, toBengaliNumerals } = useLanguage();
 
-  // Helper to determine if an expense was paid by the current user
-  const isPaidByCurrentUser = (exp: Expense) => {
-    return isMemberMatch(
-      { id: user.id, name: user.name, email: user.email },
-      exp.paidByUserId,
-      exp.paidByName
+  // Helper to determine if an expense was paid or owned by the current user
+  const isPaidOrOwnedByCurrentUser = (exp: Expense) => {
+    const cleanUserEmail = (user.email || '').toLowerCase();
+    const userMember = { id: user.id, name: user.name, email: user.email };
+    return (
+      isMemberMatch(userMember, exp.paidByUserId, exp.paidByName) ||
+      exp.paidByUserId === user.id ||
+      exp.createdBy === user.id ||
+      (exp as any).createdByEmail?.toLowerCase() === cleanUserEmail
     );
   };
 
   // Personal Expenses: money personally paid by the current user
-  const personalExpensesList = expenses.filter((e) => !e.isShared);
+  const personalExpensesList = expenses.filter((e) => !e.isShared && isPaidOrOwnedByCurrentUser(e));
   const personalExpensesAmount = sumExactAmounts(
     personalExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
   );
 
   // Current User's Group Contribution / My Paid: money actually paid by current user for shared expenses
-  const mySharedExpensesList = expenses.filter((e) => e.isShared && isPaidByCurrentUser(e));
+  const mySharedExpensesList = expenses.filter((e) => e.isShared && isPaidOrOwnedByCurrentUser(e));
   const mySharedExpensesAmount = sumExactAmounts(
     mySharedExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
   );
@@ -103,8 +106,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const owedToYou = fromPaisa(owedToYouPaisa);
   const youOwe = fromPaisa(youOwePaisa);
 
+  // Dashboard transaction list: only current user's personal expenses + squad expenses paid/owned by current user
+  const dashboardEligibleExpenses = React.useMemo(() => {
+    return expenses.filter((exp) => isPaidOrOwnedByCurrentUser(exp));
+  }, [expenses, user]);
+
   // Filtered & Sorted Expenses
-  const sortedExpenses = [...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sortedExpenses = React.useMemo(() => {
+    return [...dashboardEligibleExpenses].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [dashboardEligibleExpenses]);
 
   const filteredExpenses = sortedExpenses.filter((exp) => {
     const matchesSearch =
@@ -123,136 +135,144 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const recentExpenses = filteredExpenses.slice(0, 7);
 
   return (
-    <div className="p-3 sm:p-5 lg:p-6 space-y-4 sm:space-y-6 flex-1 overflow-y-auto custom-scrollbar relative">
+    <div className="px-4 py-3 sm:p-5 lg:p-6 space-y-3 sm:space-y-6 flex-1 overflow-y-auto custom-scrollbar relative pb-28 sm:pb-6">
       {/* Primary Metrics Grid (Owed / Receivables / Debt) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {/* Metric 1: Total Expenses */}
-        <div className="bg-[#18181b] border border-[#27272a] p-3.5 sm:p-5 rounded-xl flex flex-col justify-between shadow-sm">
+        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <p className="text-[10px] sm:text-xs text-[#71717a] uppercase font-bold tracking-wider">
+              <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
                 {t('totalExpenses')}
               </p>
-              <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
+              <span className="text-xs sm:text-[9px] font-medium sm:font-mono sm:font-semibold text-[#38bdf8] sm:text-blue-400 bg-[#0c2340] sm:bg-blue-500/10 border border-[#0284c7]/40 sm:border-blue-500/20 px-2.5 py-0.5 sm:px-1.5 sm:rounded rounded-md">
                 {formatNumber(myPaidTransactionsCount)} {t('txs')}
               </span>
             </div>
-            <h2 className="text-xl sm:text-3xl font-light tabular-nums font-mono text-[#fafafa] tracking-tight">
+            <h2 className="text-3xl sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono text-white sm:text-[#fafafa] tracking-tight mt-1 mb-2 sm:my-0">
               {formatCurrency(totalExpensesAmount)}
             </h2>
           </div>
-          <div className="mt-2.5 sm:mt-4 flex items-center justify-between text-[10px] text-[#a1a1aa]">
+          <div className="mt-2 sm:mt-4 flex items-center justify-between text-sm sm:text-[10px] text-[#94a3b8] sm:text-[#a1a1aa]">
             <span className="truncate">{t('personal')}: {formatCurrency(personalExpensesAmount)}</span>
             <span className="truncate ml-1">{t('shared')}: {formatCurrency(mySharedExpensesAmount)}</span>
           </div>
         </div>
 
         {/* Metric 2: Owed to You */}
-        <div className="bg-[#18181b] border border-[#27272a] p-3.5 sm:p-5 rounded-xl flex flex-col justify-between shadow-sm">
+        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <p className="text-[10px] sm:text-xs text-[#71717a] uppercase font-bold tracking-wider">
+              <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
                 {t('owedToYou')}
               </p>
-              <span className="text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-semibold">
+              <span className="text-xs sm:text-[9px] font-medium sm:font-mono sm:font-semibold text-[#10b981] sm:text-emerald-400 bg-[#064e3b]/50 sm:bg-emerald-500/10 border border-[#059669]/40 sm:border-emerald-500/20 px-2.5 py-0.5 sm:px-1.5 sm:rounded rounded-md">
                 {t('receivable')}
               </span>
             </div>
-            <h2 className="text-xl sm:text-3xl font-light tabular-nums font-mono text-emerald-400 tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono text-[#10b981] sm:text-emerald-400 tracking-tight mt-1 mb-1 sm:my-0">
               {formatCurrency(owedToYou)}
             </h2>
           </div>
-          <p className="text-[10px] text-[#a1a1aa] mt-2.5 sm:mt-4 truncate">
+          <p className="text-xs sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
             {owedToYou > 0 ? t('pendingClaims') : t('noReceivables')}
           </p>
         </div>
 
         {/* Metric 3: You Owe */}
-        <div className="bg-[#18181b] border border-[#27272a] p-3.5 sm:p-5 rounded-xl flex flex-col justify-between shadow-sm">
+        <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] p-4 sm:p-5 rounded-2xl sm:rounded-xl flex flex-col justify-between shadow-sm">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <p className="text-[10px] sm:text-xs text-[#71717a] uppercase font-bold tracking-wider">
+              <p className="text-xs sm:text-[10px] text-[#94a3b8] sm:text-[#71717a] uppercase font-semibold sm:font-bold tracking-wider">
                 {t('youOwe')}
               </p>
-              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-                youOwe > 0 
-                  ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' 
-                  : 'text-[#71717a] bg-zinc-800 border-zinc-700'
-              }`}>
+              <span
+                className={`text-xs sm:text-[9px] font-medium sm:font-mono sm:font-bold px-2.5 py-0.5 sm:px-1.5 sm:rounded rounded-md border ${
+                  youOwe > 0 
+                    ? 'text-amber-400 bg-amber-950/50 border-amber-800/50 sm:bg-amber-500/10 sm:border-amber-500/20' 
+                    : 'text-[#94a3b8] sm:text-[#71717a] bg-[#1e293b]/70 sm:bg-zinc-800 border-[#334155]/60 sm:border-zinc-700'
+                }`}
+              >
                 {youOwe > 0 ? t('payable') : t('settled')}
               </span>
             </div>
-            <h2 className={`text-xl sm:text-3xl font-light tabular-nums font-mono tracking-tight ${
-              youOwe > 0 ? 'text-amber-400' : 'text-[#fafafa]'
-            }`}>
+            <h2
+              className={`text-2xl sm:text-3xl font-bold sm:font-light tabular-nums font-sans sm:font-mono tracking-tight mt-1 mb-1 sm:my-0 ${
+                youOwe > 0 ? 'text-amber-400' : 'text-white sm:text-[#fafafa]'
+              }`}
+            >
               {formatCurrency(youOwe)}
             </h2>
           </div>
-          <p className="text-[10px] text-[#a1a1aa] mt-2.5 sm:mt-4 truncate">
+          <p className="text-xs sm:text-[10px] text-[#64748b] sm:text-[#a1a1aa] mt-1 sm:mt-4 truncate">
             {youOwe > 0 ? t('outstandingBalance') : t('allDebtsCleared')}
           </p>
         </div>
       </div>
 
       {/* Quick Action Buttons Bar */}
-      <div className="grid grid-cols-2 gap-2 w-full">
+      <div className="grid grid-cols-2 gap-3 sm:gap-2 w-full my-0.5 sm:my-0">
         <button
           onClick={onOpenNewTransaction}
-          className="bg-white hover:bg-[#e4e4e7] active:scale-98 text-black font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+          className="bg-white hover:bg-slate-100 sm:hover:bg-[#e4e4e7] active:scale-[0.98] text-[#090d16] sm:text-black font-semibold sm:font-bold text-sm sm:text-xs py-3.5 sm:py-2.5 px-4 rounded-2xl sm:rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm sm:shadow-md cursor-pointer"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>{t('newTransaction')}</span>
         </button>
         <button
           onClick={onOpenSettleUp}
-          className="bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#fafafa] font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+          className="bg-[#0c1220] sm:bg-[#18181b] hover:bg-[#131b2e] sm:hover:bg-[#27272a] border border-[#1e293b] sm:border-[#27272a] text-white sm:text-[#fafafa] font-semibold sm:font-bold text-sm sm:text-xs py-3.5 sm:py-2.5 px-4 rounded-2xl sm:rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.98]"
         >
-          <ArrowUpDown className="w-4 h-4 text-emerald-400" />
+          <ArrowUpDown className="w-4 h-4 text-[#10b981] sm:text-emerald-400" />
           <span>{t('settleUp')}</span>
         </button>
       </div>
 
       {/* Main Ledger Table Area */}
-      <div className="bg-[#18181b] border border-[#27272a] rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+      <div className="bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] rounded-2xl p-4 sm:p-5 space-y-3.5 sm:space-y-4 shadow-xl">
         {/* Table Controls Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:border-b sm:border-[#27272a] sm:pb-4">
           <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-[#fafafa]">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-white sm:text-[#fafafa]">
               {t('recentExpenses')}
             </h2>
-            <p className="text-xs text-[#71717a]">
+            <p className="text-xs text-[#64748b] sm:text-[#71717a] mt-0.5">
               {t('liveStream')}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-2 w-full sm:w-auto">
             {/* Search Input */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#71717a]" />
+            <div className="relative w-full sm:w-auto">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-3 sm:top-2.5 text-[#64748b] sm:text-[#71717a]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('searchExpenses')}
-                className="bg-[#09090b] border border-[#27272a] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#fafafa] placeholder-[#52525b] focus:outline-none focus:border-blue-500 w-44 sm:w-56"
+                className="bg-[#070b14] sm:bg-[#09090b] border border-[#1e293b] sm:border-[#27272a] rounded-xl pl-9 sm:pl-8 pr-3 py-2.5 sm:py-1.5 text-xs text-white sm:text-[#fafafa] placeholder-[#475569] sm:placeholder-[#52525b] focus:outline-none focus:border-[#38bdf8]/50 sm:focus:border-blue-500 w-full sm:w-56"
               />
             </div>
 
             {/* Type Filter Buttons */}
-            <div className="flex bg-[#09090b] border border-[#27272a] rounded-xl p-0.5 text-xs">
-              {(['All', 'Personal', 'Shared'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setTypeFilter(type)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                    typeFilter === type
-                      ? 'bg-[#27272a] text-[#fafafa] shadow-sm'
-                      : 'text-[#71717a] hover:text-[#fafafa]'
-                  }`}
-                >
-                  {type === 'All' ? t('all') : type === 'Personal' ? t('personal') : t('shared')}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 sm:gap-0 sm:bg-[#09090b] sm:border sm:border-[#27272a] sm:rounded-xl sm:p-0.5 text-xs">
+              {(['All', 'Personal', 'Shared'] as const).map((type) => {
+                const isActive = typeFilter === type;
+                const label = type === 'All' ? t('all') : type === 'Personal' ? t('personal') : t('shared');
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setTypeFilter(type)}
+                    className={`transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-[#1e293b] text-white border border-slate-700/60 font-semibold px-4 py-1.5 rounded-full text-xs shadow-sm sm:bg-[#27272a] sm:text-[#fafafa] sm:border-0 sm:rounded-lg sm:text-[11px] sm:px-3 sm:py-1'
+                        : 'text-[#94a3b8] hover:text-white font-medium px-3 py-1.5 rounded-full text-xs sm:text-[#71717a] sm:hover:text-[#fafafa] sm:rounded-lg sm:text-[11px] sm:px-3 sm:py-1'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -329,49 +349,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Mobile View (< sm) — Compact, No Horizontal Scroll */}
-        <div className="block sm:hidden space-y-2">
-          {recentExpenses.map((expense) => (
-            <div
-              key={expense.id}
-              onClick={() => setSelectedTxForDetails(expense)}
-              className="bg-[#09090b] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 space-y-2 cursor-pointer transition-colors"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <h4 className="font-semibold text-xs text-[#fafafa] truncate">{expense.merchant}</h4>
-                  {expense.title && expense.title !== expense.merchant && (
-                    <p className="text-[11px] text-[#71717a] truncate">{expense.title}</p>
-                  )}
-                </div>
-                <span className="font-mono font-bold text-xs text-[#fafafa] shrink-0">
-                  {formatCurrency(expense.amount)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-[#71717a] pt-1.5 border-t border-[#27272a]/60">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                      expense.isShared
-                        ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                    }`}
-                  >
-                    {expense.isShared ? t('shared') : t('personal')}
+        <div className="block sm:hidden space-y-2.5">
+          {recentExpenses.map((expense) => {
+            const isShared = expense.isShared;
+            const displayTitle = expense.title || expense.merchant;
+            const hasSecondary = expense.title && expense.merchant && expense.title !== expense.merchant;
+            return (
+              <div
+                key={expense.id}
+                onClick={() => setSelectedTxForDetails(expense)}
+                className="bg-[#070b14] border border-[#1e293b] hover:border-[#334155] rounded-xl p-3.5 transition-colors cursor-pointer"
+              >
+                {/* Top Row: Merchant/Title & Amount */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-semibold text-sm text-white truncate">{displayTitle}</h4>
+                    {hasSecondary && (
+                      <p className="text-[11px] text-[#64748b] truncate">{expense.merchant}</p>
+                    )}
+                  </div>
+                  <span className="font-bold text-sm text-white shrink-0">
+                    {formatCurrency(expense.amount)}
                   </span>
-                  <span className="text-[#a1a1aa] truncate max-w-[100px]">{expense.category}</span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-[#71717a]">{formatDate(expense.date)}</span>
-                  <span className="text-[11px] font-semibold text-blue-400">{t('details')}</span>
+                {/* Bottom Row: Type badge, Category with dot, Date, Details button */}
+                <div className="flex items-center justify-between text-xs pt-0.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isShared ? (
+                      <span className="text-[10px] font-bold text-[#10b981] bg-[#064e3b]/40 border border-[#059669]/40 px-2 py-0.5 rounded shrink-0">
+                        SHARED
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-[#38bdf8] bg-[#0c2340] border border-[#0284c7]/40 px-2 py-0.5 rounded shrink-0">
+                        PERSONAL
+                      </span>
+                    )}
+                    <span className="text-[#94a3b8] flex items-center gap-1.5 text-xs truncate">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
+                      <span className="truncate">{expense.category}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 ml-2">
+                    <span className="text-xs text-[#64748b]">{formatDate(expense.date)}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTxForDetails(expense);
+                      }}
+                      className="text-xs font-medium text-[#38bdf8] hover:text-[#7dd3fc] hover:underline cursor-pointer"
+                    >
+                      {t('details')}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {recentExpenses.length === 0 && (
-            <div className="py-6 text-center text-xs text-[#71717a] bg-[#09090b] border border-[#27272a] rounded-xl">
+            <div className="py-6 text-center text-xs text-[#64748b] bg-[#070b14] border border-[#1e293b] rounded-xl">
               {t('noTxMatch')}
             </div>
           )}

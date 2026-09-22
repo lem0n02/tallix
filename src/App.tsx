@@ -13,6 +13,7 @@ import { enrichGroupsWithBalances, isMemberMatch } from './utils/balanceEngine';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
 import { FooterStatusBar } from './components/FooterStatusBar';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { DashboardView } from './views/DashboardView';
 import { PersonalExpensesView } from './views/PersonalExpensesView';
 import { SharedGroupsView } from './views/SharedGroupsView';
@@ -80,6 +81,71 @@ const sanitizeExpenses = (rawExpenses: Expense[]): Expense[] => {
   });
 };
 
+export interface RouteState {
+  route: AppRoute;
+  activeTab: ActiveTab;
+  selectedGroupId: string | null;
+  isEditProfileOpen: boolean;
+}
+
+export const parseLocationPath = (pathname: string): RouteState => {
+  const cleanPath = pathname.trim().replace(/\/+$/, '') || '/';
+
+  if (cleanPath === '/login' || cleanPath === '/signin') {
+    return { route: 'signin', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/signup' || cleanPath === '/register') {
+    return { route: 'signup', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/forgot-password') {
+    return { route: 'forgot-password', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/') {
+    return { route: 'landing', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+  }
+
+  // App Routes
+  if (cleanPath === '/dashboard') {
+    return { route: 'app', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/transactions' || cleanPath === '/personal-expenses') {
+    return { route: 'app', activeTab: 'personal-expenses', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath.startsWith('/groups')) {
+    const parts = cleanPath.split('/').filter(Boolean); // e.g. ['groups', 'ABC123']
+    const groupId = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
+    return { route: 'app', activeTab: 'shared-groups', selectedGroupId: groupId, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/analytics') {
+    return { route: 'app', activeTab: 'analytics', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/ai-advisor' || cleanPath === '/ai-copilot') {
+    return { route: 'app', activeTab: 'ai-advisor', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/activity') {
+    return { route: 'app', activeTab: 'activity', selectedGroupId: null, isEditProfileOpen: false };
+  }
+  if (cleanPath === '/settings' || cleanPath === '/profile') {
+    return { route: 'app', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: true };
+  }
+  if (cleanPath === '/admin/dashboard' || cleanPath.startsWith('/admin') || cleanPath === '/system-admin') {
+    return { route: 'app', activeTab: 'system-admin', selectedGroupId: null, isEditProfileOpen: false };
+  }
+
+  // Fallback: If unknown path, default to landing
+  return { route: 'landing', activeTab: 'dashboard', selectedGroupId: null, isEditProfileOpen: false };
+};
+
+export const getPathForTab = (tab: ActiveTab, grpId?: string | null): string => {
+  if (tab === 'system-admin') return '/admin/dashboard';
+  if (tab === 'personal-expenses') return '/transactions';
+  if (tab === 'shared-groups') return grpId ? `/groups/${encodeURIComponent(grpId)}` : '/groups';
+  if (tab === 'analytics') return '/analytics';
+  if (tab === 'ai-advisor') return '/ai-advisor';
+  if (tab === 'activity') return '/activity';
+  return '/dashboard';
+};
+
 export default function App() {
   // Language Global State
   const [lang, setLang] = useState<LanguageMode>(() => {
@@ -103,23 +169,22 @@ export default function App() {
     localStorage.setItem('tallix_lang', lang);
   }, [lang]);
 
-  // Routing State based on URL
-  const getRouteFromPath = (): AppRoute => {
-    const path = window.location.pathname;
-    if (path === '/login') return 'signin';
-    if (path === '/signup') return 'signup';
-    if (path === '/forgot-password') return 'forgot-password';
-    if (path === '/dashboard' || path === '/admin/dashboard' || path.startsWith('/admin')) return 'app';
-    return 'landing';
-  };
+  // Routing State based on URL - Supports all SPA paths across refresh / F5
+  const initialRouteState = parseLocationPath(typeof window !== 'undefined' ? window.location.pathname : '/');
 
-  const [route, setRoute] = useState<AppRoute>(getRouteFromPath);
+  const [route, setRoute] = useState<AppRoute>(initialRouteState.route);
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialRouteState.activeTab);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialRouteState.selectedGroupId);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState<boolean>(initialRouteState.isEditProfileOpen);
 
   // Sync route changes with browser pushState
-  const navigateTo = (newRoute: AppRoute, targetTab?: ActiveTab) => {
+  const navigateTo = (newRoute: AppRoute, targetTab?: ActiveTab, targetGroupId?: string | null) => {
     setRoute(newRoute);
     if (targetTab) {
       setActiveTab(targetTab);
+    }
+    if (targetGroupId !== undefined) {
+      setSelectedGroupId(targetGroupId);
     }
     const currentPath = window.location.pathname;
     let targetPath = '/';
@@ -129,23 +194,14 @@ export default function App() {
     else if (newRoute === 'forgot-password') targetPath = '/forgot-password';
     else if (newRoute === 'app') {
       const tab = targetTab || activeTab;
-      targetPath = tab === 'system-admin' ? '/admin/dashboard' : '/dashboard';
+      const grp = targetGroupId !== undefined ? targetGroupId : selectedGroupId;
+      targetPath = getPathForTab(tab, grp);
     }
 
     if (currentPath !== targetPath) {
       window.history.pushState(null, '', targetPath);
     }
   };
-
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    const path = window.location.pathname;
-    if (path === '/admin/dashboard' || path.startsWith('/admin')) {
-      return 'system-admin';
-    }
-    return 'dashboard';
-  });
-
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -162,31 +218,56 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_USER;
   });
 
-  // Sync popstate navigation (browser back/forward)
+  // Sync popstate navigation (browser back/forward buttons)
   useEffect(() => {
     const handlePopState = () => {
-      const currentRoute = getRouteFromPath();
-      setRoute(currentRoute);
-      if (window.location.pathname === '/admin/dashboard' || window.location.pathname.startsWith('/admin')) {
-        if (user.systemRole === 'Admin') {
-          setActiveTab('system-admin');
-        }
-      } else if (window.location.pathname === '/dashboard') {
-        setActiveTab('dashboard');
-      }
+      const parsed = parseLocationPath(window.location.pathname);
+      setRoute(parsed.route);
+      setActiveTab(parsed.activeTab);
+      setSelectedGroupId(parsed.selectedGroupId);
+      setIsEditProfileOpen(parsed.isEditProfileOpen);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [user.systemRole]);
+  }, []);
 
-  // Tab change handler that keeps URL in sync with admin dashboard
+  // Tab change handler that keeps URL in sync with active view
   const handleSelectTab = (tab: ActiveTab) => {
     setActiveTab(tab);
+    if (tab !== 'shared-groups') {
+      setSelectedGroupId(null);
+    }
     if (route === 'app') {
-      const targetPath = tab === 'system-admin' ? '/admin/dashboard' : '/dashboard';
+      const targetPath = getPathForTab(tab, tab === 'shared-groups' ? selectedGroupId : null);
       if (window.location.pathname !== targetPath) {
         window.history.pushState(null, '', targetPath);
       }
+    }
+  };
+
+  const handleSelectGroup = (groupId: string | null) => {
+    setSelectedGroupId(groupId);
+    setActiveTab('shared-groups');
+    if (route === 'app') {
+      const targetPath = groupId ? `/groups/${encodeURIComponent(groupId)}` : '/groups';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  };
+
+  const handleOpenSettings = () => {
+    setIsEditProfileOpen(true);
+    if (window.location.pathname !== '/settings' && window.location.pathname !== '/profile') {
+      window.history.pushState(null, '', '/settings');
+    }
+  };
+
+  const handleCloseSettings = () => {
+    setIsEditProfileOpen(false);
+    const targetPath = getPathForTab(activeTab, selectedGroupId);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
     }
   };
 
@@ -227,7 +308,6 @@ export default function App() {
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [isJoinGroupOpen, setIsJoinGroupOpen] = useState(false);
   const [isSettleUpOpen, setIsSettleUpOpen] = useState(false);
-  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -329,12 +409,13 @@ export default function App() {
 
   // Data Isolation Per Logged-In User with Dynamic Real-time Balance Calculation
   const userGroups = React.useMemo(() => {
-    if (!user || !user.id || !user.email) return [];
-    const cleanUserEmail = user.email.toLowerCase();
+    if (!user || !user.id) return [];
+    const cleanUserEmail = (user.email || '').toLowerCase();
     const filtered = groups.filter((g) =>
+      Array.isArray(g.members) &&
       g.members.some(
         (m) =>
-          m.id === user.id ||
+          isMemberMatch(m, user.id, user.name) ||
           (m.email && m.email.toLowerCase() === cleanUserEmail)
       )
     );
@@ -345,21 +426,43 @@ export default function App() {
     return new Set(userGroups.map((g) => g.id));
   }, [userGroups]);
 
+  // All authorized expenses for this user (including all squad expenses for squads they belong to)
   const userExpenses = React.useMemo(() => {
-    if (!user || !user.id || !user.email) return [];
-    const cleanUserEmail = user.email.toLowerCase();
+    if (!user || !user.id) return [];
+    const cleanUserEmail = (user.email || '').toLowerCase();
+    const userMember = { id: user.id, name: user.name, email: user.email };
     return expenses.filter((e) => {
       // Shared expense: only accessible if user is a member of that Squad
       if (e.isShared && e.groupId) {
         return userGroupIds.has(e.groupId);
       }
-      // Personal expense: owned by user
+      // Personal expense: owned / paid by user
       return (
         e.paidByUserId === user.id ||
-        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail
+        e.createdBy === user.id ||
+        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail ||
+        isMemberMatch(userMember, e.paidByUserId, e.paidByName)
       );
     });
   }, [expenses, user, userGroupIds]);
+
+  // Dedicated Dashboard Query: Current user's personal transactions PLUS squad transactions
+  // where the CURRENT USER is the payer / owner. Transactions paid by other members are excluded from Dashboard.
+  const dashboardExpenses = React.useMemo(() => {
+    if (!user || !user.id) return [];
+    const cleanUserEmail = (user.email || '').toLowerCase();
+    const userMember = { id: user.id, name: user.name, email: user.email };
+
+    return userExpenses.filter((e) => {
+      const isPaidByMe = isMemberMatch(userMember, e.paidByUserId, e.paidByName);
+      const isOwnedByMe =
+        e.paidByUserId === user.id ||
+        e.createdBy === user.id ||
+        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail;
+
+      return isPaidByMe || isOwnedByMe;
+    });
+  }, [userExpenses, user]);
 
   const userSettlements = React.useMemo(() => {
     if (!user || !user.id) return [];
@@ -658,8 +761,8 @@ export default function App() {
     const matchedPayer = selectedGroup?.members.find((m) =>
       isMemberMatch(m, user.id, user.name)
     );
-    const finalPaidByUserId = matchedPayer ? matchedPayer.id : user.id;
-    const finalPaidByName = matchedPayer ? matchedPayer.name : user.name;
+    const finalPaidByUserId = newExpenseData.paidByUserId || (matchedPayer ? matchedPayer.id : user.id);
+    const finalPaidByName = newExpenseData.paidByName || (matchedPayer ? matchedPayer.name : user.name);
 
     const exactAmount = parseExactMoney(newExpenseData.amount);
     const origAmount = newExpenseData.originalAmount !== undefined
@@ -1096,9 +1199,9 @@ export default function App() {
         user={user}
         groups={userGroups}
         selectedGroupId={selectedGroupId}
-        setSelectedGroupId={setSelectedGroupId}
+        setSelectedGroupId={handleSelectGroup}
         onOpenNewGroup={() => setIsNewGroupOpen(true)}
-        onOpenEditProfile={() => setIsEditProfileOpen(true)}
+        onOpenEditProfile={handleOpenSettings}
         onLogout={handleLogout}
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
@@ -1114,7 +1217,7 @@ export default function App() {
             onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
             user={user}
-            onOpenEditProfile={() => setIsEditProfileOpen(true)}
+            onOpenEditProfile={handleOpenSettings}
             onLogout={handleLogout}
             isMobileMenuOpen={isMobileMenuOpen}
             onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -1145,10 +1248,10 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <DashboardView
               user={user}
-              expenses={userExpenses}
+              expenses={dashboardExpenses}
               groups={userGroups}
               settlements={userSettlements}
-              onSelectTab={setActiveTab}
+              onSelectTab={handleSelectTab}
               onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
               onOpenSettleUp={() => setIsSettleUpOpen(true)}
               onSaveExpense={handleSaveExpense}
@@ -1173,7 +1276,7 @@ export default function App() {
               expenses={userExpenses}
               settlements={userSettlements}
               selectedGroupId={selectedGroupId}
-              setSelectedGroupId={setSelectedGroupId}
+              setSelectedGroupId={handleSelectGroup}
               currentUser={user}
               onOpenNewGroup={() => setIsNewGroupOpen(true)}
               onOpenJoinGroup={() => setIsJoinGroupOpen(true)}
@@ -1216,9 +1319,19 @@ export default function App() {
           )}
         </div>
 
-        {/* Footer Status Bar */}
-        <FooterStatusBar />
+        {/* Footer Status Bar (Desktop) */}
+        <div className="hidden md:block">
+          <FooterStatusBar />
+        </div>
       </main>
+
+      {/* Mobile Fixed Bottom Navigation Bar */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={handleSelectTab}
+        user={user}
+        onOpenEditProfile={handleOpenSettings}
+      />
 
       {/* Modals */}
       <CommandPaletteModal
@@ -1286,7 +1399,7 @@ export default function App() {
 
       <EditProfileModal
         isOpen={isEditProfileOpen}
-        onClose={() => setIsEditProfileOpen(false)}
+        onClose={handleCloseSettings}
         user={user}
         onSaveUser={handleSaveUser}
         onSave={handleSaveUser}

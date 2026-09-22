@@ -375,8 +375,8 @@ async function startServer() {
       const filterBySince = (item: any) => {
         if (!since) return true;
         const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-        const sinceTime = new Date(since).getTime();
-        return itemTime > sinceTime;
+        const sinceTime = new Date(since).getTime() - 10000; // 10-second safety window to prevent boundary drops
+        return itemTime >= sinceTime;
       };
 
       const expenses = Array.from(serverExpenses.values()).filter(filterBySince);

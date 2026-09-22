@@ -23,11 +23,12 @@ import { Expense, Group, Settlement } from '../types';
 
 // Cloudflare Worker API Base URL (configured in production via VITE_WORKER_URL)
 const SYNC_BASE_URL = (import.meta.env.VITE_WORKER_URL || '').replace(/\/$/, '');
+const ACTIVE_POLL_INTERVAL_MS = 60000; // 60s active polling while tab is visible
 
 type SyncStatusListener = (status: SyncStatusInfo) => void;
 type DataUpdateListener = () => void;
 
-class SyncEngine {
+export class SyncEngine {
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
   private state: SyncState = 'synced';
   private pendingCount: number = 0;
@@ -39,7 +40,11 @@ class SyncEngine {
   private statusListeners: Set<SyncStatusListener> = new Set();
   private dataListeners: Set<DataUpdateListener> = new Set();
   private periodicInterval: any = null;
-  private heartbeatInterval: any = null;
+  private isInitialized: boolean = false;
+
+  private handleOnline: (() => void) | null = null;
+  private handleOffline: (() => void) | null = null;
+  private handleVisibilityChange: (() => void) | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -47,42 +52,106 @@ class SyncEngine {
     }
   }
 
-  private initListeners() {
+  public initListeners() {
+    if (this.isInitialized) {
+      return;
+    }
+    this.isInitialized = true;
+
     // Reset any mutations left in 'syncing' status on previous session crash
     resetStuckSyncingMutations().catch(console.warn);
 
-    window.addEventListener('online', () => {
-      this.checkReachability().then((reachable) => {
-        if (reachable) {
-          this.triggerSync();
-        }
-      });
-    });
+    this.handleOnline = () => {
+      this.isOnline = true;
+      // Single sync cycle performs reachability check and synchronizes
+      this.triggerSync();
+    };
 
-    window.addEventListener('offline', () => {
+    this.handleOffline = () => {
       this.isOnline = false;
       this.state = 'offline';
       this.notifyStatusListeners();
-    });
+    };
 
-    // Run health ping every 20 seconds to guarantee real connectivity
-    this.heartbeatInterval = setInterval(() => {
-      this.checkReachability();
-    }, 20000);
+    this.handleVisibilityChange = () => {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'hidden') {
+        // Stop active polling when the tab is in the background
+        this.stopPeriodicSync();
+      } else if (document.visibilityState === 'visible') {
+        // Resume active polling
+        this.startPeriodicSync();
+        // Perform ONE immediate sync when returning to visible
+        if (this.isOnline && this.currentUserId) {
+          this.triggerSync();
+        }
+      }
+    };
 
-    // Periodic sync every 30 seconds when online
+    window.addEventListener('online', this.handleOnline);
+    window.addEventListener('offline', this.handleOffline);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    }
+
+    // Start active polling only if document is visible
+    this.startPeriodicSync();
+  }
+
+  public startPeriodicSync() {
+    this.stopPeriodicSync();
+
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
+
     this.periodicInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        this.stopPeriodicSync();
+        return;
+      }
       if (this.isOnline && !this.isSyncInProgress && this.currentUserId) {
         this.triggerSync();
       }
-    }, 30000);
+    }, ACTIVE_POLL_INTERVAL_MS);
+  }
+
+  public stopPeriodicSync() {
+    if (this.periodicInterval) {
+      clearInterval(this.periodicInterval);
+      this.periodicInterval = null;
+    }
+  }
+
+  public destroy() {
+    this.stopPeriodicSync();
+
+    if (typeof window !== 'undefined') {
+      if (this.handleOnline) {
+        window.removeEventListener('online', this.handleOnline);
+        this.handleOnline = null;
+      }
+      if (this.handleOffline) {
+        window.removeEventListener('offline', this.handleOffline);
+        this.handleOffline = null;
+      }
+    }
+
+    if (typeof document !== 'undefined' && this.handleVisibilityChange) {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+      this.handleVisibilityChange = null;
+    }
+
+    this.statusListeners.clear();
+    this.dataListeners.clear();
+    this.isInitialized = false;
   }
 
   public setUserId(userId: string | null) {
     this.currentUserId = userId;
     if (userId) {
       this.updatePendingCount().then(() => {
-        if (this.isOnline) {
+        if (this.isOnline && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
           this.triggerSync();
         }
       });
