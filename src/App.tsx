@@ -47,6 +47,11 @@ import { generateEntityId } from './services/idGenerator';
 import { syncEngine } from './services/syncEngine';
 import { updateUserProfile, fetchUserProfileFromD1 } from './services/authService';
 import { toPaisa, parseExactMoney, splitExactAmount } from './utils/money';
+import {
+  getCurrentMonthKey,
+  getAvailableMonthKeys,
+  filterExpensesByMonth,
+} from './utils/monthFilter';
 
 export { parseLocationPath, getPathForTab };
 export type { AppRoute, RouteState };
@@ -474,6 +479,40 @@ export default function App() {
         (s.groupId && userGroupIds.has(s.groupId))
     );
   }, [settlements, user, userGroupIds]);
+
+  // Shared Month Filter State: Defaults to current month, preserved across page refresh in sessionStorage
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('tallix_selected_month');
+      if (saved) return saved;
+    } catch {
+      // Ignore storage errors
+    }
+    return getCurrentMonthKey();
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('tallix_selected_month', selectedMonth);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [selectedMonth]);
+
+  // Dynamically compute available months based on transaction dates (descending order)
+  const availableMonths = useMemo(() => {
+    return getAvailableMonthKeys(expenses);
+  }, [expenses]);
+
+  // Month-filtered personal and shared expenses
+  const monthFilteredUserExpenses = useMemo(() => {
+    return filterExpensesByMonth(userExpenses, selectedMonth);
+  }, [userExpenses, selectedMonth]);
+
+  // Month-filtered dashboard expenses (personal + paid by me in squads)
+  const monthFilteredDashboardExpenses = useMemo(() => {
+    return filterExpensesByMonth(dashboardExpenses, selectedMonth);
+  }, [dashboardExpenses, selectedMonth]);
 
   // Route Protection: Redirect unauthenticated users trying to access protected workspace routes
   useEffect(() => {
@@ -1300,6 +1339,9 @@ export default function App() {
             onLogout={handleLogout}
             isMobileMenuOpen={isMobileMenuOpen}
             onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            selectedMonth={selectedMonth}
+            onSelectMonth={setSelectedMonth}
+            availableMonths={availableMonths}
             lang={lang}
             onLangChange={setLang}
             onOpenGuestModal={() => setIsGuestModalOpen(true)}
@@ -1327,7 +1369,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <DashboardView
               user={user}
-              expenses={dashboardExpenses}
+              expenses={monthFilteredDashboardExpenses}
               groups={userGroups}
               settlements={userSettlements}
               onSelectTab={handleSelectTab}
@@ -1343,7 +1385,7 @@ export default function App() {
 
           {activeTab === 'personal-expenses' && (
             <PersonalExpensesView
-              expenses={userExpenses}
+              expenses={monthFilteredUserExpenses}
               onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
               onDeleteExpense={handleDeleteExpense}
               onToggleExpenseStatus={handleToggleExpenseStatus}
@@ -1354,7 +1396,8 @@ export default function App() {
           {activeTab === 'shared-groups' && (
             <SharedGroupsView
               groups={userGroups}
-              expenses={userExpenses}
+              expenses={monthFilteredUserExpenses}
+              allExpenses={userExpenses}
               settlements={userSettlements}
               selectedGroupId={selectedGroupId}
               setSelectedGroupId={handleSelectGroup}

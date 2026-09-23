@@ -5,13 +5,14 @@ import {
   Activity,
   Edit3,
   LogOut,
-  Globe,
   User,
   Users
 } from 'lucide-react';
 import { UserProfile, LanguageMode } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { SyncStatusBadge } from './SyncStatusBadge';
+import { MonthSelector } from './MonthSelector';
+import { getCurrentMonthKey } from '../utils/monthFilter';
 
 interface HeaderProps {
   onOpenNewTransaction: () => void;
@@ -21,8 +22,11 @@ interface HeaderProps {
   onLogout?: () => void;
   onToggleMobileMenu?: () => void;
   isMobileMenuOpen?: boolean;
-  lang: LanguageMode;
-  onLangChange: (lang: LanguageMode) => void;
+  selectedMonth?: string;
+  onSelectMonth?: (monthKey: string) => void;
+  availableMonths?: string[];
+  lang?: LanguageMode;
+  onLangChange?: (lang: LanguageMode) => void;
   onOpenGuestModal?: () => void;
 }
 
@@ -34,15 +38,20 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onToggleMobileMenu,
   isMobileMenuOpen = false,
-  lang,
+  selectedMonth,
+  onSelectMonth,
+  availableMonths,
+  lang = 'en',
   onLangChange,
   onOpenGuestModal,
 }) => {
   const [latency, setLatency] = useState<number>(24);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showLangMenu, setShowLangMenu] = useState(false);
 
-  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
+  const activeMonth = selectedMonth || getCurrentMonthKey();
+  const monthList = availableMonths && availableMonths.length > 0 ? availableMonths : [activeMonth];
+
+  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang as LanguageMode, key);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -89,52 +98,12 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        {/* Language Switcher Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setShowLangMenu(!showLangMenu);
-              setShowDropdown(false);
-            }}
-            className="p-1.5 text-[#a1a1aa] hover:text-white bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] hover:border-[#3f3f46] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs"
-            title="Language Switcher"
-          >
-            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase">{lang === 'en' ? 'EN' : 'বাংলা'}</span>
-          </button>
-
-          {showLangMenu && (
-            <div className="absolute right-0 mt-2 w-36 bg-[#0c1220] sm:bg-[#18181b] border border-[#1e293b] sm:border-[#27272a] rounded-xl shadow-2xl py-1 z-30 animate-fadeIn">
-              <div className="px-3 py-1 text-[10px] uppercase font-bold text-[#71717a] border-b border-[#1e293b] sm:border-[#27272a]">
-                {t('language')}
-              </div>
-              <button
-                onClick={() => {
-                  onLangChange('en');
-                  setShowLangMenu(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#18181b] transition-colors cursor-pointer ${
-                  lang === 'en' ? 'text-blue-400 font-bold bg-[#18181b]/50' : 'text-[#a1a1aa]'
-                }`}
-              >
-                <span>English</span>
-                <span className="text-[10px] font-mono">EN</span>
-              </button>
-              <button
-                onClick={() => {
-                  onLangChange('bn');
-                  setShowLangMenu(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-[#18181b] transition-colors cursor-pointer ${
-                  lang === 'bn' ? 'text-emerald-400 font-bold bg-[#18181b]/50' : 'text-[#a1a1aa]'
-                }`}
-              >
-                <span>বাংলা</span>
-                <span className="text-[10px] font-mono">BN</span>
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Month Selector Dropdown (Replaces Language Switcher) */}
+        <MonthSelector
+          selectedMonth={activeMonth}
+          onSelectMonth={onSelectMonth || (() => {})}
+          availableMonths={monthList}
+        />
 
         {/* New Transaction Button (Desktop header) */}
         <button
@@ -151,7 +120,6 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => {
                 setShowDropdown(!showDropdown);
-                setShowLangMenu(false);
               }}
               className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-gradient-to-tr ${user.avatarGradient || 'from-emerald-600 to-teal-500'} flex items-center justify-center font-bold text-xs text-white shadow-md border border-[#27272a] hover:border-emerald-500 transition-all cursor-pointer`}
               title="Account Menu"

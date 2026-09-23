@@ -185,7 +185,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('grid-cols-5');
   });
 
-  it('renders mobile header with user greeting, status indicator, EN switcher, and profile avatar, without hamburger menu', () => {
+  it('renders mobile header with user greeting, status indicator, Month Selector, and profile avatar, without hamburger menu', () => {
     const html = renderToString(
       <Header
         onOpenNewTransaction={vi.fn()}
@@ -202,8 +202,8 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('Welcome back');
     expect(html).toContain('Lemon');
 
-    // Verify EN language switcher
-    expect(html).toContain('EN');
+    // Verify Month Selector has replaced EN language switcher
+    expect(html).toContain('Filter by month');
 
     // Verify Top-Right Profile avatar
     expect(html).toContain('Account Menu');

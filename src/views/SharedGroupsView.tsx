@@ -35,6 +35,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 interface SharedGroupsViewProps {
   groups: Group[];
   expenses: Expense[];
+  allExpenses?: Expense[];
   settlements?: Settlement[];
   selectedGroupId: string | null;
   setSelectedGroupId: (id: string | null) => void;
@@ -64,6 +65,7 @@ const MEMBER_LINE_COLORS = [
 export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   groups,
   expenses,
+  allExpenses,
   settlements = [],
   selectedGroupId,
   setSelectedGroupId,
@@ -137,8 +139,9 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   // 3. Calculate member balances dynamically using balanceEngine
   const updatedMembers = useMemo(() => {
     if (!activeGroup) return [];
-    return calculateGroupMembersWithBalances(activeGroup, expenses, settlements);
-  }, [activeGroup, expenses, settlements]);
+    const memberCalcExpenses = allExpenses || expenses;
+    return calculateGroupMembersWithBalances(activeGroup, memberCalcExpenses, settlements);
+  }, [activeGroup, expenses, allExpenses, settlements]);
 
   // 5. Current User Metrics in Squad
   const currentUserMember = useMemo(() => {
