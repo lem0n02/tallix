@@ -288,7 +288,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={() => handleNavClick(onLogout)}
               className="p-1.5 text-[#71717a] hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
-              title={t('logout')}
+              title={user.isGuest ? 'Exit Guest Mode' : t('logout')}
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>

@@ -7,11 +7,15 @@ interface ProfileViewProps {
   onSaveUser: (updatedUser: UserProfile) => void | Promise<void>;
   lang?: LanguageMode;
   onNavigate?: (path: string) => void;
+  onExitGuestMode?: () => void;
+  isGuestSession?: boolean;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   user,
   onSaveUser,
+  onExitGuestMode,
+  isGuestSession,
 }) => {
   const [avatarUrl, setAvatarUrl] = useState<string>(user.avatarUrl || '');
   const [monthlyBudget, setMonthlyBudget] = useState<number | string>(user.liquidityLimit ?? 25000);
@@ -132,10 +136,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         {saveSuccess && (
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg animate-in fade-in">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Profile synced successfully</span>
+            <span>{user.isGuest || isGuestSession ? 'Profile saved locally' : 'Profile synced successfully'}</span>
           </div>
         )}
       </div>
+
+      {(user.isGuest || isGuestSession) && (
+        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-300">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-bold text-white">Temporary Guest Mode Active</p>
+              <p className="text-[11px] text-amber-300/80">
+                You are exploring Tallix without a permanent account. Guest data is stored locally on this device only and will not sync to any server.
+              </p>
+            </div>
+          </div>
+          {onExitGuestMode && (
+            <button
+              type="button"
+              onClick={onExitGuestMode}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Exit Guest Mode
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: PROFILE PICTURE */}

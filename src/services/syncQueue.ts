@@ -16,6 +16,23 @@ export async function enqueueMutation(params: {
   const now = new Date().toISOString();
   const clientDeviceId = getClientDeviceId();
 
+  // Guest data isolation: NEVER enqueue mutations for temporary guest sessions
+  if (!params.userId || params.userId.startsWith('usr_guest') || params.userId === 'guest') {
+    return {
+      mutationId: 'guest_local_noop',
+      entityType: params.entityType,
+      entityId: params.entityId,
+      operation: params.operation,
+      payload: params.payload,
+      userId: params.userId,
+      createdAt: now,
+      updatedAt: now,
+      retryCount: 0,
+      status: 'completed',
+      clientDeviceId,
+    };
+  }
+
   // Inspect existing pending mutations for the same entity to collapse where safe
   const allMutations = await idbGetAll<SyncMutation>(STORES.SYNC_QUEUE);
   const existingForEntity = allMutations.filter(

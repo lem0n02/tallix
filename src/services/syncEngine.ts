@@ -149,12 +149,16 @@ export class SyncEngine {
 
   public setUserId(userId: string | null) {
     this.currentUserId = userId;
-    if (userId) {
+    if (userId && !userId.startsWith('usr_guest') && userId !== 'guest') {
       this.updatePendingCount().then(() => {
         if (this.isOnline && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
           this.triggerSync();
         }
       });
+    } else {
+      this.pendingCount = 0;
+      this.state = 'synced';
+      this.notifyStatusListeners();
     }
   }
 
@@ -261,11 +265,22 @@ export class SyncEngine {
       return { success: false, error: 'Sync already in progress' };
     }
 
+    // Guest isolation: never push or pull to remote Cloudflare D1/APIs during guest mode
+    if (this.currentUserId && (this.currentUserId.startsWith('usr_guest') || this.currentUserId === 'guest')) {
+      return { success: true };
+    }
+
     const reachable = await this.checkReachability();
     if (!reachable) {
       this.state = 'offline';
       this.notifyStatusListeners();
       return { success: false, error: 'Device is offline' };
+    }
+
+    if (!this.currentUserId) {
+      this.state = 'synced';
+      this.notifyStatusListeners();
+      return { success: true };
     }
 
     this.isSyncInProgress = true;

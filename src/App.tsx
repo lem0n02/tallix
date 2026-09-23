@@ -31,6 +31,8 @@ import { JoinGroupModal } from './components/JoinGroupModal';
 import { SettleUpModal } from './components/SettleUpModal';
 import { EditProfileModal } from './components/EditProfileModal';
 import { EditExpenseModal } from './components/EditExpenseModal';
+import { ExitGuestModal } from './components/auth/ExitGuestModal';
+import { INITIAL_GUEST_USER, INITIAL_GUEST_GROUPS } from './config/guestConstants';
 import { ProfileView } from './views/ProfileView';
 import { NotFoundView } from './views/NotFoundView';
 import { ActivityView } from './views/ActivityView';
@@ -249,6 +251,30 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Guest-isolated data state
+  const [guestUser, setGuestUser] = useState<UserProfile>(() => {
+    const saved = localStorage.getItem('tallix_guest_user');
+    return saved ? JSON.parse(saved) : INITIAL_GUEST_USER;
+  });
+
+  const [guestExpenses, setGuestExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem('tallix_guest_expenses');
+    return saved ? sanitizeExpenses(JSON.parse(saved)) : [];
+  });
+
+  const [guestGroups, setGuestGroups] = useState<Group[]>(() => {
+    const saved = localStorage.getItem('tallix_guest_groups');
+    return saved ? JSON.parse(saved) : INITIAL_GUEST_GROUPS;
+  });
+
+  const [guestSettlements, setGuestSettlements] = useState<Settlement[]>(() => {
+    const saved = localStorage.getItem('tallix_guest_settlements');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Modal for Exit Guest Confirmation
+  const [isExitGuestModalOpen, setIsExitGuestModalOpen] = useState(false);
+
   // Modals state
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isNewTransactionOpen, setIsNewTransactionOpen] = useState(false);
@@ -259,10 +285,12 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
-  // Sync state to local storage
+  // Sync registered user state to local storage (only when NOT in guest session)
   useEffect(() => {
-    localStorage.setItem('tallix_user', JSON.stringify(user));
-  }, [user]);
+    if (!isGuestSession) {
+      localStorage.setItem('tallix_user', JSON.stringify(user));
+    }
+  }, [user, isGuestSession]);
 
   useEffect(() => {
     localStorage.setItem('tallix_auth', isAuthenticated ? 'true' : isGuestSession ? 'guest' : 'false');
@@ -273,16 +301,22 @@ export default function App() {
   }, [registeredUsers]);
 
   useEffect(() => {
-    localStorage.setItem('tallix_expenses', JSON.stringify(expenses));
-  }, [expenses]);
+    if (!isGuestSession) {
+      localStorage.setItem('tallix_expenses', JSON.stringify(expenses));
+    }
+  }, [expenses, isGuestSession]);
 
   useEffect(() => {
-    localStorage.setItem('tallix_groups', JSON.stringify(groups));
-  }, [groups]);
+    if (!isGuestSession) {
+      localStorage.setItem('tallix_groups', JSON.stringify(groups));
+    }
+  }, [groups, isGuestSession]);
 
   useEffect(() => {
-    localStorage.setItem('tallix_settlements', JSON.stringify(settlements));
-  }, [settlements]);
+    if (!isGuestSession) {
+      localStorage.setItem('tallix_settlements', JSON.stringify(settlements));
+    }
+  }, [settlements, isGuestSession]);
 
   useEffect(() => {
     localStorage.setItem('tallix_audit_logs', JSON.stringify(auditLogs));
@@ -291,6 +325,31 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('tallix_guest_visits', JSON.stringify(guestVisits));
   }, [guestVisits]);
+
+  // Guest-isolated persistence
+  useEffect(() => {
+    if (isGuestSession) {
+      localStorage.setItem('tallix_guest_user', JSON.stringify(guestUser));
+    }
+  }, [guestUser, isGuestSession]);
+
+  useEffect(() => {
+    if (isGuestSession) {
+      localStorage.setItem('tallix_guest_expenses', JSON.stringify(guestExpenses));
+    }
+  }, [guestExpenses, isGuestSession]);
+
+  useEffect(() => {
+    if (isGuestSession) {
+      localStorage.setItem('tallix_guest_groups', JSON.stringify(guestGroups));
+    }
+  }, [guestGroups, isGuestSession]);
+
+  useEffect(() => {
+    if (isGuestSession) {
+      localStorage.setItem('tallix_guest_settlements', JSON.stringify(guestSettlements));
+    }
+  }, [guestSettlements, isGuestSession]);
 
   // Offline-First IndexedDB Initializer & Remote Synchronization Subscription
   useEffect(() => {
@@ -408,25 +467,35 @@ export default function App() {
     }
   }, [isAuthenticated, isGuestSession, user?.id]);
 
-  // Update syncEngine active user ID
+  // Active State Collections: completely isolated between Guest Mode and Registered Users
+  const activeUser = isGuestSession ? guestUser : user;
+  const activeExpenses = isGuestSession ? guestExpenses : expenses;
+  const activeGroups = isGuestSession ? guestGroups : groups;
+  const activeSettlements = isGuestSession ? guestSettlements : settlements;
+
+  // Update syncEngine active user ID (never enable remote sync for guest sessions)
   useEffect(() => {
-    syncEngine.setUserId(user?.id || null);
-  }, [user?.id]);
+    if (isGuestSession || activeUser?.isGuest) {
+      syncEngine.setUserId(null);
+    } else {
+      syncEngine.setUserId(activeUser?.id || null);
+    }
+  }, [activeUser?.id, activeUser?.isGuest, isGuestSession]);
 
   // Data Isolation Per Logged-In User with Dynamic Real-time Balance Calculation
   const userGroups = React.useMemo(() => {
-    if (!user || !user.id) return [];
-    const cleanUserEmail = (user.email || '').toLowerCase();
-    const filtered = groups.filter((g) =>
+    if (!activeUser || !activeUser.id) return [];
+    const cleanUserEmail = (activeUser.email || '').toLowerCase();
+    const filtered = activeGroups.filter((g) =>
       Array.isArray(g.members) &&
       g.members.some(
         (m) =>
-          isMemberMatch(m, user.id, user.name) ||
+          isMemberMatch(m, activeUser.id, activeUser.name) ||
           (m.email && m.email.toLowerCase() === cleanUserEmail)
       )
     );
-    return enrichGroupsWithBalances(filtered, expenses, settlements);
-  }, [groups, expenses, settlements, user]);
+    return enrichGroupsWithBalances(filtered, activeExpenses, activeSettlements);
+  }, [activeGroups, activeExpenses, activeSettlements, activeUser]);
 
   const userGroupIds = React.useMemo(() => {
     return new Set(userGroups.map((g) => g.id));
@@ -434,51 +503,51 @@ export default function App() {
 
   // All authorized expenses for this user (including all squad expenses for squads they belong to)
   const userExpenses = React.useMemo(() => {
-    if (!user || !user.id) return [];
-    const cleanUserEmail = (user.email || '').toLowerCase();
-    const userMember = { id: user.id, name: user.name, email: user.email };
-    return expenses.filter((e) => {
+    if (!activeUser || !activeUser.id) return [];
+    const cleanUserEmail = (activeUser.email || '').toLowerCase();
+    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+    return activeExpenses.filter((e) => {
       // Shared expense: only accessible if user is a member of that Squad
       if (e.isShared && e.groupId) {
         return userGroupIds.has(e.groupId);
       }
       // Personal expense: owned / paid by user
       return (
-        e.paidByUserId === user.id ||
-        e.createdBy === user.id ||
+        e.paidByUserId === activeUser.id ||
+        e.createdBy === activeUser.id ||
         (e as any).createdByEmail?.toLowerCase() === cleanUserEmail ||
         isMemberMatch(userMember, e.paidByUserId, e.paidByName)
       );
     });
-  }, [expenses, user, userGroupIds]);
+  }, [activeExpenses, activeUser, userGroupIds]);
 
   // Dedicated Dashboard Query: Current user's personal transactions PLUS squad transactions
   // where the CURRENT USER is the payer / owner. Transactions paid by other members are excluded from Dashboard.
   const dashboardExpenses = React.useMemo(() => {
-    if (!user || !user.id) return [];
-    const cleanUserEmail = (user.email || '').toLowerCase();
-    const userMember = { id: user.id, name: user.name, email: user.email };
+    if (!activeUser || !activeUser.id) return [];
+    const cleanUserEmail = (activeUser.email || '').toLowerCase();
+    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
 
     return userExpenses.filter((e) => {
       const isPaidByMe = isMemberMatch(userMember, e.paidByUserId, e.paidByName);
       const isOwnedByMe =
-        e.paidByUserId === user.id ||
-        e.createdBy === user.id ||
+        e.paidByUserId === activeUser.id ||
+        e.createdBy === activeUser.id ||
         (e as any).createdByEmail?.toLowerCase() === cleanUserEmail;
 
       return isPaidByMe || isOwnedByMe;
     });
-  }, [userExpenses, user]);
+  }, [userExpenses, activeUser]);
 
   const userSettlements = React.useMemo(() => {
-    if (!user || !user.id) return [];
-    return settlements.filter(
+    if (!activeUser || !activeUser.id) return [];
+    return activeSettlements.filter(
       (s) =>
-        s.fromUserId === user.id ||
-        s.toUserId === user.id ||
+        s.fromUserId === activeUser.id ||
+        s.toUserId === activeUser.id ||
         (s.groupId && userGroupIds.has(s.groupId))
     );
-  }, [settlements, user, userGroupIds]);
+  }, [activeSettlements, activeUser, userGroupIds]);
 
   // Shared Month Filter State: Defaults to current month, preserved across page refresh in sessionStorage
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -501,8 +570,8 @@ export default function App() {
 
   // Dynamically compute available months based on transaction dates (descending order)
   const availableMonths = useMemo(() => {
-    return getAvailableMonthKeys(expenses);
-  }, [expenses]);
+    return getAvailableMonthKeys(activeExpenses);
+  }, [activeExpenses]);
 
   // Month-filtered personal and shared expenses
   const monthFilteredUserExpenses = useMemo(() => {
@@ -530,10 +599,10 @@ export default function App() {
 
   // Role Guard: Redirect non-admin users away from admin dashboard
   useEffect(() => {
-    if (currentRoute.isAdmin && user.systemRole !== 'Admin') {
+    if (currentRoute.isAdmin && activeUser.systemRole !== 'Admin') {
       navigate('/dashboard', { replace: true });
     }
-  }, [currentRoute.isAdmin, user.systemRole, navigate]);
+  }, [currentRoute.isAdmin, activeUser.systemRole, navigate]);
 
   // Auth Guard: Redirect already-authenticated users away from login/signup/forgot-password
   useEffect(() => {
@@ -544,6 +613,26 @@ export default function App() {
 
   // Handlers
   const handleSaveUser = async (updatedUser: UserProfile) => {
+    if (isGuestSession) {
+      setGuestUser(updatedUser);
+      try {
+        localStorage.setItem('tallix_guest_user', JSON.stringify(updatedUser));
+      } catch {
+        // Ignore localStorage quota
+      }
+      setAuditLogs((prev) => [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          level: 'INFO',
+          message: `Guest profile updated locally: ${updatedUser.name}`,
+          source: 'guest-manager',
+        },
+        ...prev,
+      ]);
+      return;
+    }
+
     setUser(updatedUser);
     try {
       localStorage.setItem('tallix_user', JSON.stringify(updatedUser));
@@ -794,6 +883,79 @@ export default function App() {
     ]);
   };
 
+  const handleContinueAsGuest = () => {
+    setIsAuthenticated(false);
+    setIsGuestSession(true);
+    localStorage.setItem('tallix_auth', 'guest');
+
+    // Ensure default guest state in local storage if not yet initialized
+    const savedGuestUser = localStorage.getItem('tallix_guest_user');
+    if (!savedGuestUser) {
+      setGuestUser(INITIAL_GUEST_USER);
+      localStorage.setItem('tallix_guest_user', JSON.stringify(INITIAL_GUEST_USER));
+    }
+
+    const savedGuestGroups = localStorage.getItem('tallix_guest_groups');
+    if (!savedGuestGroups) {
+      setGuestGroups(INITIAL_GUEST_GROUPS);
+      localStorage.setItem('tallix_guest_groups', JSON.stringify(INITIAL_GUEST_GROUPS));
+    }
+
+    syncEngine.setUserId(null);
+
+    setAuditLogs((prev) => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        level: 'INFO',
+        message: 'Guest Mode session started (isolated local device mode)',
+        source: 'guest-session',
+      },
+      ...prev,
+    ]);
+
+    navigate('/dashboard');
+  };
+
+  const handleExitGuestMode = () => {
+    setIsExitGuestModalOpen(false);
+    setIsGuestSession(false);
+    setIsAuthenticated(false);
+    localStorage.removeItem('tallix_auth');
+    localStorage.removeItem('tallix_guest_expenses');
+    localStorage.removeItem('tallix_guest_groups');
+    localStorage.removeItem('tallix_guest_settlements');
+    localStorage.removeItem('tallix_guest_user');
+
+    setGuestExpenses([]);
+    setGuestGroups(INITIAL_GUEST_GROUPS);
+    setGuestSettlements([]);
+    setGuestUser(INITIAL_GUEST_USER);
+
+    // If a registered user was previously cached, restore their profile so login screen is ready
+    const cachedRegisteredUser = localStorage.getItem('tallix_user');
+    if (cachedRegisteredUser) {
+      try {
+        setUser(JSON.parse(cachedRegisteredUser));
+      } catch {}
+    } else {
+      setUser(INITIAL_USER);
+    }
+
+    setAuditLogs((prev) => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        level: 'INFO',
+        message: 'Exited Guest Mode session',
+        source: 'guest-session',
+      },
+      ...prev,
+    ]);
+
+    navigate('/login');
+  };
+
   const handleGuestSubmit = (guestRecord: GuestVisit) => {
     setGuestVisits((prev) => [guestRecord, ...prev]);
     LocalRepository.addGuestVisit(guestRecord);
@@ -803,7 +965,7 @@ export default function App() {
     setIsGuestModalOpen(false);
 
     // Create temporary guest user profile
-    const guestUser: UserProfile = {
+    const guestUserRecord: UserProfile = {
       id: guestRecord.id,
       name: guestRecord.name,
       email: guestRecord.email,
@@ -818,15 +980,15 @@ export default function App() {
       isGuest: true,
     };
 
-    setUser(guestUser);
-    localStorage.setItem('tallix_user', JSON.stringify(guestUser));
+    setGuestUser(guestUserRecord);
+    localStorage.setItem('tallix_guest_user', JSON.stringify(guestUserRecord));
 
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: `Guest visit session initiated: ${guestRecord.name} (${guestRecord.email}) [IP: ${guestRecord.ip}, ${guestRecord.country}]`,
+        message: `Guest visit session initiated: ${guestRecord.name} (${guestRecord.email})`,
         source: 'guest-collector',
       },
       ...prev,
@@ -836,6 +998,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (isGuestSession) {
+      setIsExitGuestModalOpen(true);
+      return;
+    }
     setIsAuthenticated(false);
     setIsGuestSession(false);
     setUser(INITIAL_USER);
@@ -864,14 +1030,14 @@ export default function App() {
     const targetGroupId = newExpenseData.isShared
       ? (newExpenseData.groupId || selectedGroupId || defaultGroup?.id)
       : undefined;
-    const selectedGroup = groups.find((g) => g.id === targetGroupId);
+    const selectedGroup = activeGroups.find((g) => g.id === targetGroupId);
 
-    // Find if the logged in user matches a specific member ID in the group, or fallback to user.id
+    // Find if the logged in user matches a specific member ID in the group, or fallback to activeUser.id
     const matchedPayer = selectedGroup?.members.find((m) =>
-      isMemberMatch(m, user.id, user.name)
+      isMemberMatch(m, activeUser.id, activeUser.name)
     );
-    const finalPaidByUserId = newExpenseData.paidByUserId || (matchedPayer ? matchedPayer.id : user.id);
-    const finalPaidByName = newExpenseData.paidByName || (matchedPayer ? matchedPayer.name : user.name);
+    const finalPaidByUserId = newExpenseData.paidByUserId || (matchedPayer ? matchedPayer.id : activeUser.id);
+    const finalPaidByName = newExpenseData.paidByName || (matchedPayer ? matchedPayer.name : activeUser.name);
 
     const exactAmount = parseExactMoney(newExpenseData.amount);
     const origAmount = newExpenseData.originalAmount !== undefined
@@ -888,11 +1054,41 @@ export default function App() {
       isShared: !!newExpenseData.isShared,
       groupId: targetGroupId,
       groupName: newExpenseData.isShared ? (selectedGroup?.name || newExpenseData.groupName) : undefined,
-      createdBy: user.id,
-      createdByEmail: user.email,
+      createdBy: activeUser.id,
+      createdByEmail: activeUser.email,
       paidByUserId: finalPaidByUserId,
       paidByName: finalPaidByName,
     } as Expense;
+
+    if (isGuestSession) {
+      setGuestExpenses((prev) => [createdExpense, ...prev]);
+
+      if (createdExpense.isShared && createdExpense.groupId) {
+        setGuestGroups((prevGroups) =>
+          prevGroups.map((g) => {
+            if (g.id === createdExpense.groupId) {
+              return {
+                ...g,
+                totalSpent: Math.round((g.totalSpent + createdExpense.amount) * 100) / 100,
+              };
+            }
+            return g;
+          })
+        );
+      }
+
+      setAuditLogs((prev) => [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          level: 'INFO',
+          message: `Guest expense logged: "${createdExpense.title}" (৳${createdExpense.amount})`,
+          source: 'guest-ledger',
+        },
+        ...prev,
+      ]);
+      return;
+    }
 
     // Persist locally in IndexedDB and enqueue for sync
     LocalRepository.createExpense(createdExpense, user.id);
@@ -927,6 +1123,12 @@ export default function App() {
   };
 
   const handleUpdateExpenseStatus = (id: string, status: 'Completed' | 'Pending' | 'Approved' | 'Flagged') => {
+    if (isGuestSession) {
+      setGuestExpenses((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, status } : e))
+      );
+      return;
+    }
     setExpenses((prev) =>
       prev.map((e) => {
         if (e.id === id) {
@@ -940,6 +1142,18 @@ export default function App() {
   };
 
   const handleToggleExpenseStatus = (id: string) => {
+    if (isGuestSession) {
+      setGuestExpenses((prev) =>
+        prev.map((e) => {
+          if (e.id === id) {
+            const nextStatus = (e.status === 'Completed' ? 'Pending' : 'Completed') as 'Completed' | 'Pending';
+            return { ...e, status: nextStatus };
+          }
+          return e;
+        })
+      );
+      return;
+    }
     setExpenses((prev) =>
       prev.map((e) => {
         if (e.id === id) {
@@ -954,6 +1168,10 @@ export default function App() {
   };
 
   const handleDeleteExpense = (id: string) => {
+    if (isGuestSession) {
+      setGuestExpenses((prev) => prev.filter((e) => e.id !== id));
+      return;
+    }
     LocalRepository.deleteExpense(id, user.id);
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   };
@@ -981,14 +1199,30 @@ export default function App() {
       unsettledAmount: 0,
       members: [
         {
-          id: user.id,
-          name: `${user.name} (You)`,
-          email: user.email,
+          id: activeUser.id,
+          name: `${activeUser.name} (You)`,
+          email: activeUser.email,
           role: 'Admin',
           balance: 0,
         },
       ],
     };
+
+    if (isGuestSession) {
+      setGuestGroups((prev) => [createdGroup, ...prev]);
+      navigate(`/groups/${encodeURIComponent(createdGroup.id)}`);
+      setAuditLogs((prev) => [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          level: 'INFO',
+          message: `Created guest squad: "${createdGroup.name}"`,
+          source: 'guest-squad',
+        },
+        ...prev,
+      ]);
+      return;
+    }
 
     LocalRepository.createGroup(createdGroup, user.id);
     setGroups((prev) => [createdGroup, ...prev]);
@@ -1008,15 +1242,41 @@ export default function App() {
 
   const handleJoinGroupByCode = (inviteCode: string): { success: boolean; message: string } => {
     const cleanCode = inviteCode.trim().toUpperCase();
-    const matchedGroup = groups.find((g) => g.inviteCode?.toUpperCase() === cleanCode);
+    const targetGroups = isGuestSession ? guestGroups : groups;
+    const matchedGroup = targetGroups.find((g) => g.inviteCode?.toUpperCase() === cleanCode);
 
     if (!matchedGroup) {
       return { success: false, message: 'Invalid invite code. Squad not found.' };
     }
 
-    const isAlreadyMember = matchedGroup.members.some((m) => m.id === user.id || m.email === user.email);
+    const isAlreadyMember = matchedGroup.members.some((m) => m.id === activeUser.id || m.email === activeUser.email);
     if (isAlreadyMember) {
       return { success: false, message: `You are already a member of ${matchedGroup.name}.` };
+    }
+
+    if (isGuestSession) {
+      setGuestGroups((prev) =>
+        prev.map((g) => {
+          if (g.id === matchedGroup.id) {
+            return {
+              ...g,
+              members: [
+                ...g.members,
+                {
+                  id: activeUser.id,
+                  name: activeUser.name,
+                  email: activeUser.email,
+                  role: 'Member',
+                  balance: 0,
+                },
+              ],
+            };
+          }
+          return g;
+        })
+      );
+      navigate(`/groups/${encodeURIComponent(matchedGroup.id)}`);
+      return { success: true, message: `Successfully joined ${matchedGroup.name}!` };
     }
 
     let updatedGroup: Group | undefined;
@@ -1063,6 +1323,13 @@ export default function App() {
   };
 
   const handleDeleteGroup = (groupId: string) => {
+    if (isGuestSession) {
+      setGuestGroups((prev) => prev.filter((g) => g.id !== groupId));
+      if (selectedGroupId === groupId) {
+        navigate('/groups');
+      }
+      return;
+    }
     const targetGroup = groups.find((g) => g.id === groupId);
     LocalRepository.deleteGroup(groupId, user.id);
     setGroups((prev) => prev.filter((g) => g.id !== groupId));
@@ -1082,6 +1349,20 @@ export default function App() {
   };
 
   const handleRemoveMember = (groupId: string, memberId: string) => {
+    if (isGuestSession) {
+      setGuestGroups((prev) =>
+        prev.map((g) => {
+          if (g.id === groupId) {
+            return {
+              ...g,
+              members: g.members.filter((m) => m.id !== memberId),
+            };
+          }
+          return g;
+        })
+      );
+      return;
+    }
     let updatedGroup: Group | undefined;
     setGroups((prev) =>
       prev.map((g) => {
@@ -1112,6 +1393,12 @@ export default function App() {
       amount_paisa: toPaisa(origAmount),
       updatedAt: new Date().toISOString(),
     };
+
+    if (isGuestSession) {
+      setGuestExpenses((prev) => prev.map((e) => (e.id === cleanExpense.id ? cleanExpense : e)));
+      return;
+    }
+
     LocalRepository.updateExpense(cleanExpense, user.id);
     setExpenses((prev) => prev.map((e) => (e.id === cleanExpense.id ? cleanExpense : e)));
     setAuditLogs((prev) => [
@@ -1127,6 +1414,12 @@ export default function App() {
   };
 
   const handleAcceptSettlement = (settlementId: string) => {
+    if (isGuestSession) {
+      setGuestSettlements((prev) =>
+        prev.map((s) => (s.id === settlementId ? { ...s, status: 'Accepted' } : s))
+      );
+      return;
+    }
     let targetSettlement: Settlement | undefined;
     setSettlements((prev) =>
       prev.map((s) => {
@@ -1153,6 +1446,12 @@ export default function App() {
   };
 
   const handleRejectSettlement = (settlementId: string) => {
+    if (isGuestSession) {
+      setGuestSettlements((prev) =>
+        prev.map((s) => (s.id === settlementId ? { ...s, status: 'Rejected' } : s))
+      );
+      return;
+    }
     let targetSettlement: Settlement | undefined;
     setSettlements((prev) =>
       prev.map((s) => {
@@ -1179,7 +1478,8 @@ export default function App() {
   };
 
   const handleSettleUp = (settlementData: Settlement | any) => {
-    const matchedGroup = groups.find((g) => g.id === settlementData.groupId);
+    const activeGroupList = isGuestSession ? guestGroups : groups;
+    const matchedGroup = activeGroupList.find((g) => g.id === settlementData.groupId);
     
     // Attempt to resolve payee member from group members list
     const payeeName = settlementData.payeeName || settlementData.toUserName || 'Recipient';
@@ -1189,7 +1489,7 @@ export default function App() {
         isMemberMatch(m, undefined, payeeName)
     );
 
-    const payerName = settlementData.payerName || settlementData.fromUserName || user.name;
+    const payerName = settlementData.payerName || settlementData.fromUserName || activeUser.name;
     const payerMember = matchedGroup?.members.find(
       (m) =>
         (settlementData.fromUserId && m.id === settlementData.fromUserId) ||
@@ -1205,7 +1505,7 @@ export default function App() {
       id: settlementData.id || generateEntityId('stl'),
       groupId: settlementData.groupId || matchedGroup?.id || '',
       groupName: matchedGroup?.name || settlementData.groupName || 'Shared Squad',
-      fromUserId: payerMember?.id || settlementData.fromUserId || user.id,
+      fromUserId: payerMember?.id || settlementData.fromUserId || activeUser.id,
       fromUserName: payerMember?.name || payerName,
       toUserId: payeeMember?.id || settlementData.toUserId || generateEntityId('usr'),
       toUserName: payeeMember?.name || payeeName,
@@ -1219,6 +1519,11 @@ export default function App() {
       proofUrl: settlementData.proofUrl,
       note: settlementData.note,
     };
+
+    if (isGuestSession) {
+      setGuestSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
+      return;
+    }
 
     LocalRepository.createSettlement(newSettlement, user.id);
     setSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
@@ -1275,6 +1580,7 @@ export default function App() {
         onNavigateToForgotPassword={() => navigate('/forgot-password')}
         onBackToHome={() => navigate('/')}
         onOpenGuestModal={() => setIsGuestModalOpen(true)}
+        onContinueAsGuest={handleContinueAsGuest}
       />
     );
   }
@@ -1291,6 +1597,7 @@ export default function App() {
         onSwitchToSignIn={() => navigate('/login')}
         onNavigateToSignIn={() => navigate('/login')}
         onBackToHome={() => navigate('/')}
+        onContinueAsGuest={handleContinueAsGuest}
       />
     );
   }
@@ -1307,6 +1614,11 @@ export default function App() {
     );
   }
 
+  // Route Protection: Unauthenticated users must not render workspace
+  if (currentRoute.isProtected && !isAuthenticated && !isGuestSession) {
+    return null;
+  }
+
   // Route 5: Active App Workspace
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-[#fafafa] font-sans overflow-hidden">
@@ -1314,13 +1626,13 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={handleSelectTab}
-        user={user}
+        user={activeUser}
         groups={userGroups}
         selectedGroupId={selectedGroupId}
         setSelectedGroupId={handleSelectGroup}
         onOpenNewGroup={() => setIsNewGroupOpen(true)}
         onOpenEditProfile={handleOpenSettings}
-        onLogout={handleLogout}
+        onLogout={isGuestSession ? () => setIsExitGuestModalOpen(true) : handleLogout}
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
         lang={lang}
@@ -1334,9 +1646,9 @@ export default function App() {
           <Header
             onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-            user={user}
+            user={activeUser}
             onOpenEditProfile={handleOpenSettings}
-            onLogout={handleLogout}
+            onLogout={isGuestSession ? () => setIsExitGuestModalOpen(true) : handleLogout}
             isMobileMenuOpen={isMobileMenuOpen}
             onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             selectedMonth={selectedMonth}
@@ -1345,16 +1657,27 @@ export default function App() {
             lang={lang}
             onLangChange={setLang}
             onOpenGuestModal={() => setIsGuestModalOpen(true)}
+            isGuestSession={isGuestSession}
+            onOpenExitGuestModal={() => setIsExitGuestModalOpen(true)}
           />
 
           {/* Quick Route Switches */}
           <div className="absolute top-3 right-56 hidden xl:flex items-center gap-2">
-            <button
-              onClick={() => navigate('/login')}
-              className="text-[11px] bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-white px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-            >
-              Switch Account
-            </button>
+            {isGuestSession ? (
+              <button
+                onClick={() => setIsExitGuestModalOpen(true)}
+                className="text-[11px] bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 text-amber-400 hover:text-amber-300 px-2.5 py-1 rounded-md transition-colors cursor-pointer font-medium"
+              >
+                Exit Guest Mode
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                className="text-[11px] bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-white px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+              >
+                Switch Account
+              </button>
+            )}
             <button
               onClick={() => navigate('/')}
               className="text-[11px] bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-white px-2.5 py-1 rounded-md transition-colors cursor-pointer"
@@ -1368,7 +1691,7 @@ export default function App() {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {activeTab === 'dashboard' && (
             <DashboardView
-              user={user}
+              user={activeUser}
               expenses={monthFilteredDashboardExpenses}
               groups={userGroups}
               settlements={userSettlements}
@@ -1401,7 +1724,7 @@ export default function App() {
               settlements={userSettlements}
               selectedGroupId={selectedGroupId}
               setSelectedGroupId={handleSelectGroup}
-              currentUser={user}
+              currentUser={activeUser}
               onOpenNewGroup={() => setIsNewGroupOpen(true)}
               onOpenJoinGroup={() => setIsJoinGroupOpen(true)}
               onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
@@ -1430,10 +1753,12 @@ export default function App() {
 
           {activeTab === 'profile' && (
             <ProfileView
-              user={user}
+              user={activeUser}
               onSaveUser={handleSaveUser}
               lang={lang}
               onNavigate={navigate}
+              isGuestSession={isGuestSession}
+              onExitGuestMode={() => setIsExitGuestModalOpen(true)}
             />
           )}
 
@@ -1466,7 +1791,7 @@ export default function App() {
       <MobileBottomNav
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
-        user={user}
+        user={activeUser}
         onOpenEditProfile={handleOpenSettings}
       />
 
@@ -1496,7 +1821,7 @@ export default function App() {
         isOpen={isNewTransactionOpen}
         onClose={() => setIsNewTransactionOpen(false)}
         groups={userGroups}
-        currentUser={user}
+        currentUser={activeUser}
         defaultGroupId={selectedGroupId || undefined}
         onSave={handleSaveExpense}
         onSaveExpense={handleSaveExpense}
@@ -1520,7 +1845,7 @@ export default function App() {
         isOpen={isSettleUpOpen}
         onClose={() => setIsSettleUpOpen(false)}
         groups={userGroups}
-        currentUser={user}
+        currentUser={activeUser}
         defaultGroupId={selectedGroupId}
         onSettle={handleSettleUp}
         onRecordSettlement={handleSettleUp}
@@ -1531,7 +1856,7 @@ export default function App() {
         onClose={() => setEditingExpense(null)}
         expense={editingExpense}
         groups={userGroups}
-        currentUser={user}
+        currentUser={activeUser}
         onSaveExpense={handleEditExpense}
         onSave={handleEditExpense}
       />
@@ -1539,9 +1864,15 @@ export default function App() {
       <EditProfileModal
         isOpen={isEditProfileOpen}
         onClose={handleCloseSettings}
-        user={user}
+        user={activeUser}
         onSaveUser={handleSaveUser}
         onSave={handleSaveUser}
+      />
+
+      <ExitGuestModal
+        isOpen={isExitGuestModalOpen}
+        onClose={() => setIsExitGuestModalOpen(false)}
+        onConfirmExit={handleExitGuestMode}
       />
     </div>
   );

@@ -28,6 +28,8 @@ interface HeaderProps {
   lang?: LanguageMode;
   onLangChange?: (lang: LanguageMode) => void;
   onOpenGuestModal?: () => void;
+  isGuestSession?: boolean;
+  onOpenExitGuestModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
   lang = 'en',
   onLangChange,
   onOpenGuestModal,
+  isGuestSession = false,
+  onOpenExitGuestModal,
 }) => {
   const [latency, setLatency] = useState<number>(24);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -77,6 +81,17 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{t('welcomeBack')}</span>
             <span className="text-blue-400 font-bold truncate max-w-[120px] xs:max-w-[160px] sm:max-w-none">{user?.name || 'Staff Engineer'}</span>
             <span className="hidden xs:inline">👋</span>
+            {(isGuestSession || user?.isGuest) && (
+              <button
+                type="button"
+                onClick={onOpenExitGuestModal}
+                title="Guest Mode active. Click to exit."
+                className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 ml-1 transition-all cursor-pointer shrink-0"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>Guest Mode</span>
+              </button>
+            )}
           </h2>
           <p className="text-[10px] sm:text-[11px] text-[#a1a1aa] hidden sm:block">
             {t('overviewSubtext')}
@@ -141,8 +156,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="px-4 py-2 border-b border-[#27272a]">
                   <p className="text-xs font-bold text-[#fafafa] truncate">{user.name}</p>
                   <p className="text-[10px] text-[#71717a] truncate font-mono">{user.email}</p>
-                  <div className="mt-1 inline-flex items-center gap-1 text-[9px] uppercase font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.2 rounded">
-                    {user.systemRole} Role
+                  <div className={`mt-1 inline-flex items-center gap-1 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                    user.isGuest || isGuestSession
+                      ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                      : 'text-blue-400 bg-blue-500/10 border border-blue-500/20'
+                  }`}>
+                    {user.isGuest || isGuestSession ? 'Guest Session' : `${user.systemRole} Role`}
                   </div>
                 </div>
 
@@ -160,7 +179,22 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   )}
 
-                  {onLogout && (
+                  {(isGuestSession || user.isGuest) ? (
+                    <button
+                      onClick={() => {
+                        setShowDropdown(false);
+                        if (onOpenExitGuestModal) {
+                          onOpenExitGuestModal();
+                        } else if (onLogout) {
+                          onLogout();
+                        }
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 transition-colors cursor-pointer border-t border-[#27272a] mt-1 pt-2"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Exit Guest Mode</span>
+                    </button>
+                  ) : onLogout ? (
                     <button
                       onClick={() => {
                         setShowDropdown(false);
@@ -171,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <LogOut className="w-3.5 h-3.5" />
                       <span>{t('logout')}</span>
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}

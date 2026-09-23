@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Loader2, ArrowRight, KeyRound, CheckCircle2, AlertCircle, Mail } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ArrowRight, KeyRound, CheckCircle2, AlertCircle, Mail, UserCheck } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
 import { registerUserToCloudflareD1 } from '../../services/authService';
@@ -13,6 +13,7 @@ interface SignUpViewProps {
   onSuccess?: (user: UserProfile) => void;
   onRegister?: (user: RegisteredUser) => void;
   onSwitchToSignIn?: () => void;
+  onContinueAsGuest?: () => void;
 }
 
 export const SignUpView: React.FC<SignUpViewProps> = ({
@@ -24,6 +25,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   onSuccess,
   onRegister,
   onSwitchToSignIn,
+  onContinueAsGuest,
 }) => {
   const handleSuccess = onSuccessAuth || onSuccess || (() => { });
   const handleSignInNav = onNavigateToSignIn || onSwitchToSignIn || (() => { });
@@ -377,6 +379,19 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               Sign In
             </button>
           </div>
+
+          {onContinueAsGuest && (
+            <div className="pt-3 border-t border-[#27272a]/80 mt-2 w-full">
+              <button
+                type="button"
+                onClick={onContinueAsGuest}
+                className="w-full bg-[#18181b] hover:bg-[#27272a] text-[#e4e4e7] hover:text-white border border-[#27272a] hover:border-[#3f3f46] font-semibold text-xs py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.99]"
+              >
+                <UserCheck className="w-4 h-4 text-emerald-400" />
+                <span>Continue as Guest</span>
+              </button>
+            </div>
+          )}
         </>
       ) : (
         /* Step 2: Verification (OTP) */
