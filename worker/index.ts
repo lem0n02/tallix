@@ -1159,7 +1159,12 @@ export default {
         const assetRes = await env.ASSETS.fetch(request);
         // If the path is not a file with extension (e.g. /dashboard, /transactions, /analytics, /groups/xyz)
         // and returns 404, fallback to index.html for SPA client-side routing
-        if (assetRes.status === 404 && request.method === 'GET' && !url.pathname.includes('.')) {
+        if (assetRes.status === 404 && (request.method === 'GET' || request.method === 'HEAD') && !url.pathname.includes('.')) {
+          const spaReqHtml = new Request(new URL('/index.html', request.url), request);
+          const spaResHtml = await env.ASSETS.fetch(spaReqHtml);
+          if (spaResHtml.status === 200) {
+            return spaResHtml;
+          }
           const spaReq = new Request(new URL('/', request.url), request);
           return await env.ASSETS.fetch(spaReq);
         }

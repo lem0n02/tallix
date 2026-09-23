@@ -188,4 +188,78 @@ describe('Authoritative Routing Architecture Suite', () => {
       });
     });
   });
+
+  describe('5. Desktop & Mobile Shared Navigation Matrix', () => {
+    const requiredDesktopRoutes = [
+      { path: '/dashboard', expectedTab: 'dashboard', expectedRoute: 'dashboard' },
+      { path: '/transactions', expectedTab: 'personal-expenses', expectedRoute: 'transactions' },
+      { path: '/analytics', expectedTab: 'analytics', expectedRoute: 'analytics' },
+      { path: '/settings', expectedTab: 'profile', expectedRoute: 'settings' },
+      { path: '/profile', expectedTab: 'profile', expectedRoute: 'profile' },
+      { path: '/groups/GOA2026', expectedTab: 'shared-groups', expectedRoute: 'group-details', groupId: 'GOA2026' },
+      { path: '/groups/squad_alpha', expectedTab: 'shared-groups', expectedRoute: 'group-details', groupId: 'squad_alpha' },
+      { path: '/groups', expectedTab: 'shared-groups', expectedRoute: 'groups' },
+      { path: '/ai-advisor', expectedTab: 'ai-advisor', expectedRoute: 'ai-advisor' },
+      { path: '/activity', expectedTab: 'activity', expectedRoute: 'activity' },
+    ];
+
+    it.each(requiredDesktopRoutes)(
+      'resolves $path to tab: $expectedTab without unexpected redirection',
+      ({ path, expectedTab, expectedRoute, groupId }) => {
+        const routeInfo = parseRoute(path);
+        expect(routeInfo.routeName).toBe(expectedRoute);
+        expect(routeInfo.activeTab).toBe(expectedTab);
+        expect(routeInfo.isProtected).toBe(true);
+        if (groupId) {
+          expect(routeInfo.params.groupId).toBe(groupId);
+        }
+      }
+    );
+
+    it('preserves route identity across simulated page refresh (F5)', () => {
+      // Direct URL / F5 entry simulation
+      const targetPaths = [
+        '/dashboard',
+        '/transactions',
+        '/analytics',
+        '/settings',
+        '/profile',
+        '/groups/GOA2026',
+      ];
+
+      targetPaths.forEach((path) => {
+        const parsed = parseRoute(path);
+        // Ensure no redirect to landing or unhandled 404
+        expect(parsed.routeName).not.toBe('landing');
+        expect(parsed.routeName).not.toBe('not-found');
+        expect(parsed.isProtected).toBe(true);
+
+        // Canonical mapping matches
+        const canonical = getPathForTab(parsed.activeTab, parsed.params.groupId);
+        if (path === '/settings') {
+          // Settings is an alias for profile
+          expect(canonical).toBe('/profile');
+        } else {
+          expect(canonical).toBe(path);
+        }
+      });
+    });
+
+    it('extracts groupId with special characters and spaces safely', () => {
+      const parsed = parseRoute('/groups/Trip%20to%20Cox%27s%20Bazar');
+      expect(parsed.params.groupId).toBe("Trip to Cox's Bazar");
+      expect(parsed.routeName).toBe('group-details');
+      expect(parsed.activeTab).toBe('shared-groups');
+    });
+
+    it('ensures both /settings and /profile resolve to profile view', () => {
+      const settingsRoute = parseRoute('/settings');
+      const profileRoute = parseRoute('/profile');
+
+      expect(settingsRoute.activeTab).toBe('profile');
+      expect(profileRoute.activeTab).toBe('profile');
+      expect(settingsRoute.isProtected).toBe(true);
+      expect(profileRoute.isProtected).toBe(true);
+    });
+  });
 });

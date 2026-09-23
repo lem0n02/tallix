@@ -191,10 +191,10 @@ export default function App() {
   // Tab change handler that updates URL via canonical path
   const handleSelectTab = useCallback(
     (tab: ActiveTab) => {
-      const targetPath = getPathForTab(tab, tab === 'shared-groups' ? selectedGroupId : null);
+      const targetPath = getPathForTab(tab);
       navigate(targetPath);
     },
-    [navigate, selectedGroupId]
+    [navigate]
   );
 
   const handleSelectGroup = useCallback(

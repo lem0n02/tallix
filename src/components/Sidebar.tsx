@@ -127,7 +127,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() =>
                     handleNavClick(() => {
                       setActiveTab(item.id);
-                      setSelectedGroupId(null);
                     })
                   }
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs md:text-sm font-medium transition-all cursor-pointer ${
@@ -179,7 +178,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() =>
                     handleNavClick(() => {
                       setSelectedGroupId(group.id);
-                      setActiveTab('shared-groups');
                     })
                   }
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all cursor-pointer ${
