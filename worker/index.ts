@@ -1154,9 +1154,16 @@ export default {
         }
       }
 
-      // 5. Static Assets fallback for all non-API paths (SPA routes, CSS, JS, images)
+      // 5. Static Assets & SPA fallback for all non-API paths (SPA routes, CSS, JS, images)
       if (!url.pathname.startsWith('/api/') && env.ASSETS) {
-        return await env.ASSETS.fetch(request);
+        const assetRes = await env.ASSETS.fetch(request);
+        // If the path is not a file with extension (e.g. /dashboard, /transactions, /analytics, /groups/xyz)
+        // and returns 404, fallback to index.html for SPA client-side routing
+        if (assetRes.status === 404 && request.method === 'GET' && !url.pathname.includes('.')) {
+          const spaReq = new Request(new URL('/', request.url), request);
+          return await env.ASSETS.fetch(spaReq);
+        }
+        return assetRes;
       }
 
       return jsonResponse({ error: 'Endpoint not found' }, 404);

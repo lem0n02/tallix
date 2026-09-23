@@ -25,7 +25,8 @@ export type ActiveTab =
   | 'analytics'
   | 'ai-advisor'
   | 'activity'
-  | 'system-admin';
+  | 'system-admin'
+  | 'profile';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -248,7 +249,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* User Card */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b]/70 border border-[#27272a] hover:border-[#3f3f46] transition-colors">
+        <div className={`flex items-center justify-between p-2 rounded-lg transition-colors border ${
+          activeTab === 'profile'
+            ? 'bg-[#27272a]/90 border-blue-500 shadow-sm'
+            : 'bg-[#18181b]/70 border-[#27272a] hover:border-[#3f3f46]'
+        }`}>
           <div
             onClick={() => handleNavClick(onOpenEditProfile)}
             className="flex items-center gap-3 min-w-0 cursor-pointer flex-1"
