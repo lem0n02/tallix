@@ -223,7 +223,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Quick Action Buttons Bar */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-2 w-full my-0.5 sm:my-0">
+      <div className="grid grid-cols-2 gap-2 sm:gap-2 w-full mt-0.5 mb-3.5 sm:my-0">
         <button
           onClick={onOpenNewTransaction}
           className="bg-white hover:bg-slate-100 sm:hover:bg-[#e4e4e7] active:scale-[0.98] text-[#090d16] sm:text-black font-semibold sm:font-bold text-xs py-2.5 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-sm sm:shadow-md cursor-pointer min-h-[42px]"

@@ -128,6 +128,8 @@ describe('Mobile Home / Dashboard Redesign', () => {
 
     expect(html).toContain('New Transaction');
     expect(html).toContain('Settle Up');
+    // Verify side-by-side layout with mobile vertical separation gap (14px mb-3.5 on mobile, sm:my-0 on desktop)
+    expect(html).toContain('grid grid-cols-2 gap-2 sm:gap-2 w-full mt-0.5 mb-3.5 sm:my-0');
   });
 
   it('renders Recent Expenses section with search, filter tabs, and mobile expense cards', () => {
@@ -233,5 +235,36 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('col-span-2 sm:col-span-1');
     // Owed to You and You Owe are col-span-1
     expect(html).toContain('col-span-1');
+  });
+
+  it('preserves side-by-side action buttons across mobile viewports (320px, 360px, 375px, 390px, 412px, 430px) with clean vertical gap to Recent Expenses', () => {
+    const mobileWidths = [320, 360, 375, 390, 412, 430];
+
+    mobileWidths.forEach((width) => {
+      const html = renderToString(
+        <div style={{ width: `${width}px` }}>
+          <LanguageProvider>
+            <DashboardView
+              user={mockUser}
+              expenses={mockExpenses}
+              onOpenNewTransaction={vi.fn()}
+              onOpenSettleUp={vi.fn()}
+              onOpenCreateGroup={vi.fn()}
+              onOpenJoinGroup={vi.fn()}
+            />
+          </LanguageProvider>
+        </div>
+      );
+
+      // Verify action buttons container has side-by-side 2-column grid and clean mobile vertical spacing
+      expect(html).toContain('grid grid-cols-2 gap-2 sm:gap-2 w-full mt-0.5 mb-3.5 sm:my-0');
+      // Both buttons present
+      expect(html).toContain('New Transaction');
+      expect(html).toContain('Settle Up');
+      // Recent Expenses ledger container present directly below
+      expect(html).toContain('Recent Expenses');
+      // No horizontal overflow classes or full-width button breakage
+      expect(html).not.toContain('grid-cols-1 sm:grid-cols-2');
+    });
   });
 });
