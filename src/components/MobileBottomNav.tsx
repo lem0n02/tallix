@@ -39,17 +39,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           )}
         </button>
 
-        {/* Tab 2: Personal Experiences */}
+        {/* Tab 2: Expenses */}
         <button
           onClick={() => onSelectTab('personal-expenses')}
           className={`flex flex-col items-center justify-center py-1 px-0.5 transition-all cursor-pointer ${
             activeTab === 'personal-expenses' ? 'text-[#10b981]' : 'text-[#64748b] hover:text-[#94a3b8]'
           }`}
-          aria-label="Personal Experiences"
+          aria-label="Expenses"
         >
           <User className="w-5 h-5 shrink-0" />
-          <span className="text-[9px] font-medium mt-0.5 leading-tight text-center">
-            Personal<br />Experiences
+          <span className="text-[10px] font-medium mt-0.5 leading-tight">
+            Expenses
           </span>
           {activeTab === 'personal-expenses' ? (
             <span className="w-6 h-0.5 bg-[#10b981] rounded-full mt-0.5" />
@@ -94,17 +94,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           )}
         </button>
 
-        {/* Tab 5: Talix AI Copilot */}
+        {/* Tab 5: Tallix AI */}
         <button
           onClick={() => onSelectTab('ai-advisor')}
           className={`flex flex-col items-center justify-center py-1 px-0.5 transition-all cursor-pointer ${
             activeTab === 'ai-advisor' ? 'text-[#10b981]' : 'text-[#64748b] hover:text-[#94a3b8]'
           }`}
-          aria-label="Talix AI Copilot"
+          aria-label="Tallix AI"
         >
           <Sparkles className="w-5 h-5 shrink-0" />
-          <span className="text-[9px] font-medium mt-0.5 leading-tight text-center">
-            Talix AI<br />Copilot
+          <span className="text-[10px] font-medium mt-0.5 leading-tight text-center">
+            Tallix AI
           </span>
           {activeTab === 'ai-advisor' ? (
             <span className="w-6 h-0.5 bg-[#10b981] rounded-full mt-0.5" />

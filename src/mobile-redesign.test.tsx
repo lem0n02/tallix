@@ -162,7 +162,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('Details');
   });
 
-  it('renders MobileBottomNav with exactly 5 items (Home, Personal Experiences, Shared Group, Analytics, Talix AI Copilot) and no bottom avatar', () => {
+  it('renders MobileBottomNav with exactly 5 items (Home, Expenses, Shared Group, Analytics, Tallix AI) and no bottom avatar', () => {
     const html = renderToString(
       <MobileBottomNav
         activeTab="dashboard"
@@ -174,13 +174,11 @@ describe('Mobile Home / Dashboard Redesign', () => {
 
     // Verify 5 items are present
     expect(html).toContain('Home');
-    expect(html).toContain('Personal');
-    expect(html).toContain('Experiences');
+    expect(html).toContain('Expenses');
     expect(html).toContain('Shared');
     expect(html).toContain('Group');
     expect(html).toContain('Analytics');
-    expect(html).toContain('Talix AI');
-    expect(html).toContain('Copilot');
+    expect(html).toContain('Tallix AI');
 
     // Verify bottom avatar is removed
     expect(html).not.toContain('LE');
