@@ -45,6 +45,7 @@ interface AdminViewProps {
   onAddUser: (user: RegisteredUser) => void;
   onRefreshUsers?: (users: RegisteredUser[]) => void;
   currentUserId: string;
+  lang?: import('../types').LanguageMode;
 }
 
 export const ADMIN_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (3,600,000 ms)

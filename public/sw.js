@@ -1,12 +1,10 @@
-// Tallix Offline-First Service Worker (v1.3.0)
-const CACHE_NAME = 'tallix-app-shell-v1.3.0';
+// Tallix Offline-First Service Worker (v1.3.1)
+const CACHE_NAME = 'tallix-app-shell-v1.3.1';
 
 // Critical core assets to precache on install
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/src/main.tsx',
-  '/src/index.css',
   '/manifest.json',
   '/src/assets/images/tallix_brand_app_logo_1785406274692.jpg',
   '/src/assets/images/tallix_app_logo_1785402472265.jpg',
@@ -95,7 +93,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static Assets (Vite scripts, CSS, images, icons, modules)
+  // Do NOT cache Vite internal development requests, node_modules, or hot module updates
+  if (
+    url.pathname.startsWith('/@') ||
+    url.pathname.includes('/node_modules/') ||
+    url.pathname.startsWith('/src/') ||
+    url.search.includes('v=') ||
+    url.search.includes('t=')
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Static Assets (production assets, images, icons, manifest)
   // Cache-first with background network revalidation
   event.respondWith(
     caches.match(request).then((cachedResponse) => {

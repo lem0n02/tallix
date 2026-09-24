@@ -45,6 +45,11 @@ export const translations = {
 
     // Squads / Groups Section
     sharedSquads: 'Shared Squads',
+    yourSquads: 'Your Squads',
+    exploreAndJoin: 'Explore & Join +',
+    thisSquad: 'This Squad',
+    chart: 'Chart',
+    timeline: 'Timeline',
     newSquad: 'New Squad',
     squadMembers: 'Members',
     totalSpent: 'Total Spent',
@@ -431,6 +436,11 @@ export const translations = {
 
     // Squads / Groups Section
     sharedSquads: 'যৌথ স্কোয়াড',
+    yourSquads: 'আপনার স্কোয়াডসমূহ',
+    exploreAndJoin: 'এক্সপ্লোর ও যুক্ত হোন +',
+    thisSquad: 'এই স্কোয়াড',
+    chart: 'চার্ট',
+    timeline: 'টাইমলাইন',
     newSquad: 'নতুন স্কোয়াড',
     squadMembers: 'সদস্যগণ',
     totalSpent: 'মোট খরচ',

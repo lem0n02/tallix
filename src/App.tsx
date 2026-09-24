@@ -36,6 +36,7 @@ import { INITIAL_GUEST_USER, INITIAL_GUEST_GROUPS } from './config/guestConstant
 import { ProfileView } from './views/ProfileView';
 import { NotFoundView } from './views/NotFoundView';
 import { ActivityView } from './views/ActivityView';
+import { LanguageProvider } from './i18n/LanguageContext';
 import {
   parseRoute,
   parseLocationPath,
@@ -1200,7 +1201,7 @@ export default function App() {
       members: [
         {
           id: activeUser.id,
-          name: `${activeUser.name} (You)`,
+          name: activeUser.name,
           email: activeUser.email,
           role: 'Admin',
           balance: 0,
@@ -1543,74 +1544,84 @@ export default function App() {
   // Route 0: 404 Not Found Page
   if (currentRoute.routeName === 'not-found') {
     return (
-      <NotFoundView
-        requestedPath={currentPath}
-        onNavigateHome={() => navigate(isAuthenticated || isGuestSession ? '/dashboard' : '/')}
-      />
+      <LanguageProvider lang={lang} setLang={setLang}>
+        <NotFoundView
+          requestedPath={currentPath}
+          onNavigateHome={() => navigate(isAuthenticated || isGuestSession ? '/dashboard' : '/')}
+        />
+      </LanguageProvider>
     );
   }
 
   // Route 1: Landing Page (`currentRoute.routeName === 'landing'`)
   if (currentRoute.routeName === 'landing') {
     return (
-      <LandingPageView
-        onSignInClick={() => navigate('/login')}
-        onSignUpClick={() => navigate('/signup')}
-        onLaunchAppClick={() => {
-          if (isAuthenticated || isGuestSession) {
-            navigate('/dashboard');
-          } else {
-            navigate('/login');
-          }
-        }}
-      />
+      <LanguageProvider lang={lang} setLang={setLang}>
+        <LandingPageView
+          onSignInClick={() => navigate('/login')}
+          onSignUpClick={() => navigate('/signup')}
+          onLaunchAppClick={() => {
+            if (isAuthenticated || isGuestSession) {
+              navigate('/dashboard');
+            } else {
+              navigate('/login');
+            }
+          }}
+        />
+      </LanguageProvider>
     );
   }
 
   // Route 2: Sign In Page (`currentRoute.routeName === 'login' || currentRoute.routeName === 'admin-login'`)
   if (currentRoute.routeName === 'login' || currentRoute.routeName === 'admin-login') {
     return (
-      <SignInView
-        registeredUsers={registeredUsers}
-        onSuccess={handleAuthSuccess}
-        onSuccessAuth={handleAuthSuccess}
-        onSwitchToSignUp={() => navigate('/signup')}
-        onNavigateToSignUp={() => navigate('/signup')}
-        onForgotPassword={() => navigate('/forgot-password')}
-        onNavigateToForgotPassword={() => navigate('/forgot-password')}
-        onBackToHome={() => navigate('/')}
-        onOpenGuestModal={() => setIsGuestModalOpen(true)}
-        onContinueAsGuest={handleContinueAsGuest}
-      />
+      <LanguageProvider lang={lang} setLang={setLang}>
+        <SignInView
+          registeredUsers={registeredUsers}
+          onSuccess={handleAuthSuccess}
+          onSuccessAuth={handleAuthSuccess}
+          onSwitchToSignUp={() => navigate('/signup')}
+          onNavigateToSignUp={() => navigate('/signup')}
+          onForgotPassword={() => navigate('/forgot-password')}
+          onNavigateToForgotPassword={() => navigate('/forgot-password')}
+          onBackToHome={() => navigate('/')}
+          onOpenGuestModal={() => setIsGuestModalOpen(true)}
+          onContinueAsGuest={handleContinueAsGuest}
+        />
+      </LanguageProvider>
     );
   }
 
   // Route 3: Sign Up Page (`currentRoute.routeName === 'signup'`)
   if (currentRoute.routeName === 'signup') {
     return (
-      <SignUpView
-        registeredUsers={registeredUsers}
-        onRegister={handleRegisterUser}
-        onRegisterUser={handleRegisterUser}
-        onSuccess={handleAuthSuccess}
-        onSuccessAuth={handleAuthSuccess}
-        onSwitchToSignIn={() => navigate('/login')}
-        onNavigateToSignIn={() => navigate('/login')}
-        onBackToHome={() => navigate('/')}
-        onContinueAsGuest={handleContinueAsGuest}
-      />
+      <LanguageProvider lang={lang} setLang={setLang}>
+        <SignUpView
+          registeredUsers={registeredUsers}
+          onRegister={handleRegisterUser}
+          onRegisterUser={handleRegisterUser}
+          onSuccess={handleAuthSuccess}
+          onSuccessAuth={handleAuthSuccess}
+          onSwitchToSignIn={() => navigate('/login')}
+          onNavigateToSignIn={() => navigate('/login')}
+          onBackToHome={() => navigate('/')}
+          onContinueAsGuest={handleContinueAsGuest}
+        />
+      </LanguageProvider>
     );
   }
 
   // Route 4: Forgot Password Page (`currentRoute.routeName === 'forgot-password'`)
   if (currentRoute.routeName === 'forgot-password') {
     return (
-      <ForgotPasswordView
-        registeredUsers={registeredUsers}
-        onBackToSignIn={() => navigate('/login')}
-        onNavigateToSignIn={() => navigate('/login')}
-        onBackToHome={() => navigate('/')}
-      />
+      <LanguageProvider lang={lang} setLang={setLang}>
+        <ForgotPasswordView
+          registeredUsers={registeredUsers}
+          onBackToSignIn={() => navigate('/login')}
+          onNavigateToSignIn={() => navigate('/login')}
+          onBackToHome={() => navigate('/')}
+        />
+      </LanguageProvider>
     );
   }
 
@@ -1621,7 +1632,8 @@ export default function App() {
 
   // Route 5: Active App Workspace
   return (
-    <div className="flex h-screen w-full bg-[#09090b] text-[#fafafa] font-sans overflow-hidden">
+    <LanguageProvider lang={lang} setLang={setLang}>
+      <div className="flex h-screen w-full bg-[#09090b] text-[#fafafa] font-sans overflow-hidden">
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -1869,11 +1881,12 @@ export default function App() {
         onSave={handleSaveUser}
       />
 
-      <ExitGuestModal
-        isOpen={isExitGuestModalOpen}
-        onClose={() => setIsExitGuestModalOpen(false)}
-        onConfirmExit={handleExitGuestMode}
-      />
-    </div>
+        <ExitGuestModal
+          isOpen={isExitGuestModalOpen}
+          onClose={() => setIsExitGuestModalOpen(false)}
+          onConfirmExit={handleExitGuestMode}
+        />
+      </div>
+    </LanguageProvider>
   );
 }

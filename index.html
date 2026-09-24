@@ -13,6 +13,22 @@
       try {
         localStorage.removeItem('tallix_theme');
       } catch (e) {}
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        if (location.hostname === 'localhost' || location.hostname.includes('run.app')) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
+          }).catch(function() {});
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (var j = 0; j < keys.length; j++) {
+                caches.delete(keys[j]);
+              }
+            }).catch(function() {});
+          }
+        }
+      }
     </script>
   </head>
   <body class="bg-[#09090b] text-[#fafafa] antialiased">
