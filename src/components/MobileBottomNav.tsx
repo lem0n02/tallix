@@ -39,17 +39,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           )}
         </button>
 
-        {/* Tab 2: Expenses */}
+        {/* Tab 2: Personal Expenses */}
         <button
           onClick={() => onSelectTab('personal-expenses')}
           className={`flex flex-col items-center justify-center py-1 px-0.5 transition-all cursor-pointer ${
             activeTab === 'personal-expenses' ? 'text-[#10b981]' : 'text-[#64748b] hover:text-[#94a3b8]'
           }`}
-          aria-label="Expenses"
+          aria-label="Personal Expenses"
         >
           <User className="w-5 h-5 shrink-0" />
-          <span className="text-[10px] font-medium mt-0.5 leading-tight">
-            Expenses
+          <span className="text-[9px] font-medium mt-0.5 leading-tight text-center">
+            Personal<br />Expenses
           </span>
           {activeTab === 'personal-expenses' ? (
             <span className="w-6 h-0.5 bg-[#10b981] rounded-full mt-0.5" />
