@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Loader2, ArrowRight, KeyRound, CheckCircle2, AlertCircle, Mail, UserCheck } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
-import { registerUserToCloudflareD1 } from '../../services/authService';
+import { registerUserToCloudflareD1, sendVerificationCode, verifyOtpCode } from '../../services/authService';
 
 interface SignUpViewProps {
   onBackToHome?: () => void;
@@ -42,9 +42,18 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
   // OTP state
   const [otpInput, setOtpInput] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [resendNotice, setResendNotice] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Timer for resend cooldown
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const [errors, setErrors] = useState<{
     fullName?: string;
@@ -111,33 +120,43 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  // Step 1: Send OTP to user's email
+  // Step 1: Send OTP to user's email via Server / Cloudflare Worker
   const handleInitiateSignUp = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateDetails()) return;
 
     setLoading(true);
+    setErrors({});
+    const cleanEmail = email.trim().toLowerCase();
 
-    setTimeout(() => {
-      // Generate 6-digit verification code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(code);
-      setStep('otp');
-      setLoading(false);
-      setOtpError('');
-    }, 600);
+    sendVerificationCode(cleanEmail)
+      .then((res) => {
+        setLoading(false);
+        if (res.success) {
+          setStep('otp');
+          setOtpError('');
+          setResendNotice('');
+          setResendCooldown(30);
+        } else {
+          setErrors({ general: res.error || 'Failed to send verification code. Please try again.' });
+        }
+      })
+      .catch((err: any) => {
+        setLoading(false);
+        setErrors({ general: err?.message || 'Failed to send verification code. Please check your network connection.' });
+      });
   };
 
-  // Step 2: Verify OTP and finalize registration
+  // Step 2: Verify OTP with server and finalize registration
   const handleVerifyOtp = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpInput.trim()) {
+    const cleanOtp = otpInput.trim();
+    if (!cleanOtp) {
       setOtpError('Please enter the 6-digit verification code');
       return;
     }
-
-    if (otpInput.trim() !== generatedOtp) {
-      setOtpError('Invalid verification code. Please check the code and try again.');
+    if (cleanOtp.length !== 6) {
+      setOtpError('The verification code must be 6 digits');
       return;
     }
 
@@ -145,56 +164,88 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
     setOtpError('');
 
     const cleanEmail = email.trim().toLowerCase();
-    const userId = `usr_reg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    registerUserToCloudflareD1({
-      id: userId,
-      name: fullName.trim(),
-      email: cleanEmail,
-      password: password,
-      systemRole: 'User',
-      roleTitle: 'Financial Member',
-      department: 'Personal Workspace',
-      avatarGradient: 'from-blue-600 to-indigo-600',
-      status: 'Active',
-    })
-      .then((result) => {
-        setLoading(false);
-        const savedUser = result.user;
-
-        if (handleRegister) {
-          handleRegister(savedUser);
+    // Verify OTP securely on the server
+    verifyOtpCode(cleanEmail, cleanOtp)
+      .then((verifyRes) => {
+        if (!verifyRes.success) {
+          setLoading(false);
+          setOtpError(verifyRes.error || 'Invalid verification code. Please check the code and try again.');
+          return;
         }
 
-        const newProfile: UserProfile = {
-          id: savedUser.id,
-          name: savedUser.name,
-          email: savedUser.email,
-          role: 'User Member',
-          systemRole: 'User',
-          title: savedUser.roleTitle || 'Financial Member',
-          department: savedUser.department || 'Personal Workspace',
-          avatarGradient: savedUser.avatarGradient || 'from-blue-600 to-indigo-600',
-          liquidityLimit: 100000,
-          currentLiquidity: 0,
-          monthlyBurnRate: 0,
-        };
+        // OTP verified successfully: proceed with registration in Cloudflare D1
+        const userId = `usr_reg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        handleSuccess(newProfile);
+        registerUserToCloudflareD1({
+          id: userId,
+          name: fullName.trim(),
+          email: cleanEmail,
+          password: password,
+          systemRole: 'User',
+          roleTitle: 'Financial Member',
+          department: 'Personal Workspace',
+          avatarGradient: 'from-blue-600 to-indigo-600',
+          status: 'Active',
+        })
+          .then((result) => {
+            setLoading(false);
+            const savedUser = result.user;
+
+            if (handleRegister) {
+              handleRegister(savedUser);
+            }
+
+            const newProfile: UserProfile = {
+              id: savedUser.id,
+              name: savedUser.name,
+              email: savedUser.email,
+              role: 'User Member',
+              systemRole: 'User',
+              title: savedUser.roleTitle || 'Financial Member',
+              department: savedUser.department || 'Personal Workspace',
+              avatarGradient: savedUser.avatarGradient || 'from-blue-600 to-indigo-600',
+              liquidityLimit: 100000,
+              currentLiquidity: 0,
+              monthlyBurnRate: 0,
+            };
+
+            handleSuccess(newProfile);
+          })
+          .catch((err: any) => {
+            setLoading(false);
+            setOtpError(err?.message || 'Registration failed. Please try again.');
+          });
       })
       .catch((err: any) => {
         setLoading(false);
-        setOtpError(err?.message || 'Registration failed. Please try again.');
+        setOtpError(err?.message || 'Verification service error. Please try again.');
       });
   };
 
   const handleResendCode = () => {
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(newCode);
-    setOtpInput('');
+    if (resendCooldown > 0 || loading) return;
+
+    setLoading(true);
     setOtpError('');
-    setResendNotice('New verification code sent!');
-    setTimeout(() => setResendNotice(''), 3000);
+    const cleanEmail = email.trim().toLowerCase();
+
+    sendVerificationCode(cleanEmail)
+      .then((res) => {
+        setLoading(false);
+        if (res.success) {
+          setOtpInput('');
+          setResendNotice('Verification code sent to your email.');
+          setResendCooldown(30);
+          setTimeout(() => setResendNotice(''), 5000);
+        } else {
+          setOtpError(res.error || 'Failed to resend verification code.');
+        }
+      })
+      .catch((err: any) => {
+        setLoading(false);
+        setOtpError(err?.message || 'Failed to resend verification code.');
+      });
   };
 
   return (
@@ -405,17 +456,16 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             </p>
           </div>
 
-          {/* OTP Code Notification Banner */}
-          <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 space-y-1.5">
-            <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Verification Code Sent!</span>
+          {/* Verification Code Notice (Never displays the actual OTP) */}
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-3.5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
-            <p className="text-[11px] text-[#a1a1aa]">
-              For verification, your 6-digit One-Time Passcode (OTP) is:
-            </p>
-            <div className="bg-[#09090b] border border-emerald-500/40 rounded-lg p-2 text-center font-mono font-extrabold text-lg tracking-widest text-emerald-400">
-              {generatedOtp}
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#fafafa]">Verification code sent to your email.</p>
+              <p className="text-[11px] text-[#a1a1aa] truncate">
+                Please check your inbox at <span className="text-white font-medium">{email}</span>
+              </p>
             </div>
           </div>
 
@@ -469,10 +519,11 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={resendCooldown > 0 || loading}
                 onClick={handleResendCode}
-                className="text-emerald-400 font-semibold hover:underline cursor-pointer"
+                className="text-emerald-400 font-semibold hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Resend code
+                {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
               </button>
             </div>
           </form>

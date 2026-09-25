@@ -553,3 +553,86 @@ export async function verifyD1UserDatabase(): Promise<{ totalUsers: number; sour
     timestamp: new Date().toISOString(),
   };
 }
+
+/**
+ * Requests server-side generation and email delivery of a 6-digit registration verification code.
+ * Safe: The response NEVER contains the OTP.
+ */
+export async function sendVerificationCode(email: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  const endpointUrl = buildApiUrl('/api/auth/send-verification');
+
+  try {
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: cleanEmail }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || (response.status === 409
+          ? 'This email is already registered. Please sign in instead.'
+          : response.status === 429
+          ? data.error || 'Please wait before requesting another code.'
+          : 'Failed to send verification code. Please try again.'),
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Verification code sent to your email.',
+    };
+  } catch (err: any) {
+    console.error('[AuthService] sendVerificationCode error:', err);
+    return {
+      success: false,
+      error: err?.message || 'Network error while sending verification code. Please check your connection.',
+    };
+  }
+}
+
+/**
+ * Validates the user-entered 6-digit verification code with the server/Worker.
+ */
+export async function verifyOtpCode(email: string, code: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim();
+  const endpointUrl = buildApiUrl('/api/auth/verify-code');
+
+  try {
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: cleanEmail, code: cleanCode }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'Invalid verification code. Please check the code and try again.',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Email verified successfully.',
+    };
+  } catch (err: any) {
+    console.error('[AuthService] verifyOtpCode error:', err);
+    return {
+      success: false,
+      error: err?.message || 'Network error while verifying code. Please try again.',
+    };
+  }
+}
+

@@ -19,6 +19,199 @@ export interface Env {
   ASSETS?: { fetch(request: Request): Promise<Response> };
   GEMINI_API_KEY?: string;
   ENVIRONMENT?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  BREVO_API_KEY?: string;
+  BREVO_SENDER_EMAIL?: string;
+  SENDGRID_API_KEY?: string;
+  SENDGRID_FROM_EMAIL?: string;
+  POSTMARK_SERVER_TOKEN?: string;
+  POSTMARK_FROM_EMAIL?: string;
+  MAILGUN_API_KEY?: string;
+  MAILGUN_DOMAIN?: string;
+  MAILGUN_FROM_EMAIL?: string;
+}
+
+const workerOtps = new Map<string, { code: string; expiresAt: number; attempts: number; createdAt: number }>();
+
+function buildVerificationEmailHtml(otp: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tallix Email Verification</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #09090b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #fafafa;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #09090b; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 36px 28px; text-align: left;">
+          <tr>
+            <td>
+              <div style="margin-bottom: 24px;">
+                <span style="font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">TALLIX</span>
+                <span style="font-size: 11px; font-weight: 700; color: #10b981; background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); padding: 2px 8px; border-radius: 12px; margin-left: 8px; vertical-align: middle;">VERIFICATION</span>
+              </div>
+              
+              <h1 style="font-size: 18px; font-weight: 700; color: #ffffff; margin: 0 0 12px 0;">Verify Your Email Address</h1>
+              <p style="font-size: 14px; line-height: 22px; color: #a1a1aa; margin: 0 0 24px 0;">
+                Thank you for signing up with Tallix! Please use the following 6-digit One-Time Passcode (OTP) to complete your account registration:
+              </p>
+
+              <div style="background-color: #09090b; border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
+                <span style="font-family: 'SF Mono', Consolas, Menlo, Monaco, monospace; font-size: 34px; font-weight: 800; letter-spacing: 10px; color: #10b981; display: inline-block; margin-left: 10px;">${otp}</span>
+              </div>
+
+              <p style="font-size: 12px; line-height: 20px; color: #71717a; margin: 0 0 8px 0;">
+                • This code is valid for <strong>10 minutes</strong>.<br/>
+                • This code is single-use and strictly for completing your Tallix account registration.<br/>
+                • Never share this verification code with anyone.
+              </p>
+
+              <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #27272a; font-size: 11px; color: #52525b; line-height: 18px;">
+                If you did not request this verification, you can safely ignore this email. No account will be created without this code.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function buildVerificationEmailText(otp: string): string {
+  return `Tallix Email Verification
+
+Your 6-digit verification code is: ${otp}
+
+Please enter this code on the registration page to complete your Tallix account registration.
+This code is valid for 10 minutes and can only be used once.
+
+If you did not request this verification, you can safely ignore this email.`;
+}
+
+async function sendWorkerEmail(to: string, otp: string, env: Env): Promise<{ success: boolean; provider?: string; error?: string }> {
+  const subject = 'Tallix Email Verification';
+  const html = buildVerificationEmailHtml(otp);
+  const text = buildVerificationEmailText(otp);
+
+  if (env.RESEND_API_KEY) {
+    try {
+      const fromEmail = env.RESEND_FROM_EMAIL || 'Tallix <onboarding@resend.dev>';
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [to],
+          subject,
+          html,
+          text,
+        }),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || `Resend HTTP ${res.status}`);
+      }
+      return { success: true, provider: 'resend' };
+    } catch (err: any) {
+      return { success: false, provider: 'resend', error: err.message };
+    }
+  }
+
+  if (env.BREVO_API_KEY) {
+    try {
+      const senderEmail = env.BREVO_SENDER_EMAIL || 'noreply@tallix.app';
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Tallix', email: senderEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || `Brevo HTTP ${res.status}`);
+      }
+      return { success: true, provider: 'brevo' };
+    } catch (err: any) {
+      return { success: false, provider: 'brevo', error: err.message };
+    }
+  }
+
+  if (env.SENDGRID_API_KEY) {
+    try {
+      const fromEmail = env.SENDGRID_FROM_EMAIL || 'noreply@tallix.app';
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: fromEmail, name: 'Tallix' },
+          subject,
+          content: [
+            { type: 'text/plain', value: text },
+            { type: 'text/html', value: html },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`SendGrid HTTP ${res.status}: ${errText}`);
+      }
+      return { success: true, provider: 'sendgrid' };
+    } catch (err: any) {
+      return { success: false, provider: 'sendgrid', error: err.message };
+    }
+  }
+
+  if (env.POSTMARK_SERVER_TOKEN) {
+    try {
+      const fromEmail = env.POSTMARK_FROM_EMAIL || 'noreply@tallix.app';
+      const res = await fetch('https://api.postmarkapp.com/email', {
+        method: 'POST',
+        headers: {
+          'X-Postmark-Server-Token': env.POSTMARK_SERVER_TOKEN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          From: fromEmail,
+          To: to,
+          Subject: subject,
+          HtmlBody: html,
+          TextBody: text,
+        }),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.Message || `Postmark HTTP ${res.status}`);
+      }
+      return { success: true, provider: 'postmark' };
+    } catch (err: any) {
+      return { success: false, provider: 'postmark', error: err.message };
+    }
+  }
+
+  return {
+    success: false,
+    error: 'No transactional email provider is configured. Please configure RESEND_API_KEY in environment variables.',
+  };
 }
 
 const CORS_HEADERS = {
@@ -106,7 +299,134 @@ export default {
         });
       }
 
-      // 3. Registration Endpoint: POST /api/auth/register
+      // 2. Request Verification OTP: POST /api/auth/send-verification
+      if (url.pathname === '/api/auth/send-verification' && request.method === 'POST') {
+        try {
+          const body: any = await request.json();
+          const { email } = body || {};
+
+          if (!email || typeof email !== 'string' || !email.trim()) {
+            return jsonResponse({ success: false, error: 'Email address is required.' }, 400);
+          }
+
+          const cleanEmail = email.trim().toLowerCase();
+          if (!/\S+@\S+\.\S+/.test(cleanEmail)) {
+            return jsonResponse({ success: false, error: 'A valid email address is required.' }, 400);
+          }
+
+          // Check for duplicate account in D1
+          const existingUser = await env.DB.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1')
+            .bind(cleanEmail)
+            .first<{ id: string }>();
+
+          if (existingUser) {
+            return jsonResponse({
+              success: false,
+              error: 'This email is already registered. Please sign in instead.',
+            }, 409);
+          }
+
+          // Rate limit: 1 request every 30 seconds
+          const existingOtp = workerOtps.get(cleanEmail);
+          if (existingOtp && Date.now() - existingOtp.createdAt < 30000) {
+            const remaining = Math.ceil((30000 - (Date.now() - existingOtp.createdAt)) / 1000);
+            return jsonResponse({
+              success: false,
+              error: `Please wait ${remaining}s before requesting a new verification code.`,
+            }, 429);
+          }
+
+          // Generate cryptographically secure 6-digit OTP
+          const randomArray = new Uint32Array(1);
+          crypto.getRandomValues(randomArray);
+          const otp = (100000 + (randomArray[0] % 900000)).toString();
+          const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+          // Deliver via configured transactional email service
+          const emailResult = await sendWorkerEmail(cleanEmail, otp, env);
+
+          if (!emailResult.success) {
+            return jsonResponse({
+              success: false,
+              error: emailResult.error || 'Failed to deliver verification email. Please check your email configuration.',
+            }, 503);
+          }
+
+          workerOtps.set(cleanEmail, {
+            code: otp,
+            expiresAt,
+            attempts: 0,
+            createdAt: Date.now(),
+          });
+
+          // SAFE RESPONSE: Never expose the OTP in response
+          return jsonResponse({
+            success: true,
+            message: 'Verification code sent to your email.',
+          });
+        } catch (err: any) {
+          return jsonResponse({ success: false, error: err?.message || 'Internal server error.' }, 500);
+        }
+      }
+
+      // 3. Verify Registration Verification Code: POST /api/auth/verify-code
+      if (url.pathname === '/api/auth/verify-code' && request.method === 'POST') {
+        try {
+          const body: any = await request.json();
+          const { email, code } = body || {};
+
+          if (!email || !code) {
+            return jsonResponse({ success: false, error: 'Email and verification code are required.' }, 400);
+          }
+
+          const cleanEmail = email.toString().trim().toLowerCase();
+          const cleanCode = code.toString().trim();
+
+          const record = workerOtps.get(cleanEmail);
+          if (!record) {
+            return jsonResponse({
+              success: false,
+              error: 'No active verification code found for this email. Please request a new code.',
+            }, 400);
+          }
+
+          if (Date.now() > record.expiresAt) {
+            workerOtps.delete(cleanEmail);
+            return jsonResponse({
+              success: false,
+              error: 'Verification code has expired. Please request a new code.',
+            }, 400);
+          }
+
+          if (record.attempts >= 5) {
+            workerOtps.delete(cleanEmail);
+            return jsonResponse({
+              success: false,
+              error: 'Too many failed attempts. Please request a new code.',
+            }, 400);
+          }
+
+          if (record.code !== cleanCode) {
+            record.attempts += 1;
+            return jsonResponse({
+              success: false,
+              error: 'Invalid verification code. Please check the code and try again.',
+            }, 400);
+          }
+
+          // Single-use: delete immediately on success
+          workerOtps.delete(cleanEmail);
+
+          return jsonResponse({
+            success: true,
+            message: 'Email verified successfully.',
+          });
+        } catch (err: any) {
+          return jsonResponse({ success: false, error: err?.message || 'Internal server error.' }, 500);
+        }
+      }
+
+      // 4. Registration Endpoint: POST /api/auth/register
       // Authoritative user creation in Cloudflare D1 with deduplication, validation, and zero plaintext exposure
       if (url.pathname === '/api/auth/register' && request.method === 'POST') {
         try {

@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { sendTransactionalEmail, buildVerificationEmailHtml, buildVerificationEmailText } from "./src/services/emailService";
 
 async function startServer() {
   const app = express();
@@ -59,6 +60,147 @@ async function startServer() {
       processedMutationsCount: processedMutations.size,
       database: "connected (Cloudflare D1 / Local Memory)",
     });
+  });
+
+  // In-Memory OTP Store for Registration Verification
+  interface ServerOtpRecord {
+    code: string;
+    expiresAt: number;
+    attempts: number;
+    createdAt: number;
+  }
+  const serverOtps = new Map<string, ServerOtpRecord>();
+
+  // Request Registration Verification Code: POST /api/auth/send-verification
+  app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+      const { email } = req.body || {};
+
+      if (!email || typeof email !== "string" || !email.trim()) {
+        return res.status(400).json({ success: false, error: "Email address is required." });
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+      if (!/\S+@\S+\.\S+/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: "A valid email address is required." });
+      }
+
+      // Check for duplicate account
+      for (const existing of serverRegisteredUsers.values()) {
+        if (existing.email && existing.email.toLowerCase() === cleanEmail) {
+          return res.status(409).json({
+            success: false,
+            error: "This email is already registered. Please sign in instead.",
+          });
+        }
+      }
+
+      // Rate limit: 1 request every 30 seconds
+      const existingOtp = serverOtps.get(cleanEmail);
+      if (existingOtp && Date.now() - existingOtp.createdAt < 30000) {
+        const remaining = Math.ceil((30000 - (Date.now() - existingOtp.createdAt)) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${remaining}s before requesting a new verification code.`,
+        });
+      }
+
+      // Generate cryptographically secure 6-digit OTP
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+      // Deliver via configured transactional email service
+      const emailResult = await sendTransactionalEmail({
+        to: cleanEmail,
+        subject: "Tallix Email Verification",
+        text: buildVerificationEmailText(otp),
+        html: buildVerificationEmailHtml(otp),
+      });
+
+      if (!emailResult.success) {
+        console.error(`[Auth] Failed to send verification email to ${cleanEmail}:`, emailResult.error);
+        return res.status(503).json({
+          success: false,
+          error: emailResult.error || "Failed to deliver verification email. Please check your email configuration.",
+        });
+      }
+
+      // Store OTP only after email is successfully dispatched
+      serverOtps.set(cleanEmail, {
+        code: otp,
+        expiresAt,
+        attempts: 0,
+        createdAt: Date.now(),
+      });
+
+      console.info(`[Auth] Verification code delivered via ${emailResult.provider} to ${cleanEmail}`);
+
+      // SAFE RESPONSE: Never expose the OTP in response
+      return res.json({
+        success: true,
+        message: "Verification code sent to your email.",
+      });
+    } catch (err: any) {
+      console.error("[Auth] send-verification error:", err);
+      return res.status(500).json({ success: false, error: "Internal server error." });
+    }
+  });
+
+  // Verify Registration Verification Code: POST /api/auth/verify-code
+  app.post("/api/auth/verify-code", (req, res) => {
+    try {
+      const { email, code } = req.body || {};
+
+      if (!email || !code) {
+        return res.status(400).json({ success: false, error: "Email and verification code are required." });
+      }
+
+      const cleanEmail = email.toString().trim().toLowerCase();
+      const cleanCode = code.toString().trim();
+
+      const record = serverOtps.get(cleanEmail);
+      if (!record) {
+        return res.status(400).json({
+          success: false,
+          error: "No active verification code found for this email. Please request a new code.",
+        });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        serverOtps.delete(cleanEmail);
+        return res.status(400).json({
+          success: false,
+          error: "Verification code has expired. Please request a new code.",
+        });
+      }
+
+      if (record.attempts >= 5) {
+        serverOtps.delete(cleanEmail);
+        return res.status(400).json({
+          success: false,
+          error: "Too many failed attempts. Please request a new code.",
+        });
+      }
+
+      if (record.code !== cleanCode) {
+        record.attempts += 1;
+        return res.status(400).json({
+          success: false,
+          error: "Invalid verification code. Please check the code and try again.",
+        });
+      }
+
+      // Single-use: delete immediately on success
+      serverOtps.delete(cleanEmail);
+
+      return res.json({
+        success: true,
+        message: "Email verified successfully.",
+      });
+    } catch (err: any) {
+      console.error("[Auth] verify-code error:", err);
+      return res.status(500).json({ success: false, error: "Internal server error." });
+    }
   });
 
   // User Registration Endpoint: POST /api/auth/register
