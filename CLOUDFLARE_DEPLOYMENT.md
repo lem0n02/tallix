@@ -55,9 +55,31 @@ npx wrangler d1 migrations apply tallix-db --local
 
 ---
 
-## 4. (Optional) Configure Gemini API Key Secret
+## 4. Configure Worker Secrets (Resend Email & Gemini)
 
-If you want the Cloudflare Worker to serve the AI Copilot and spend advisor endpoints directly from the edge:
+### A. Configure RESEND_API_KEY (Required for Email Verification)
+To enable server-side transactional email verification via Resend without exposing keys to the client:
+
+**Via Wrangler CLI:**
+```bash
+npx wrangler secret put RESEND_API_KEY
+```
+When prompted, paste your Resend API key (`re_...`).
+
+**Via Cloudflare Dashboard:**
+1. Navigate to **Workers & Pages** > **tallix-worker** > **Settings** > **Variables and Secrets**.
+2. Click **Add Secret** (or **Add** under Environment Variables).
+3. Set Variable Name to: `RESEND_API_KEY`
+4. Paste your Resend API key into the value field, encrypt/save.
+
+*(Optional)* If you have verified your custom domain in Resend and want to change the sender from the default onboarding sender (`Tallix <onboarding@resend.dev>`):
+```bash
+npx wrangler secret put RESEND_FROM_EMAIL
+# Example: Tallix <noreply@yourdomain.com>
+```
+
+### B. (Optional) Configure Gemini API Key Secret
+If you want the Cloudflare Worker to serve the AI Copilot directly from the edge:
 ```bash
 npx wrangler secret put GEMINI_API_KEY
 ```
@@ -71,8 +93,15 @@ Deploy the Worker script to Cloudflare's global edge network:
 npx wrangler deploy
 ```
 
+> **Note on Redeployment after adding secrets:**
+> - When you add or update secrets via `npx wrangler secret put RESEND_API_KEY` or the Cloudflare Dashboard, Cloudflare automatically activates a new deployment with that secret bound.
+> - **However**, because `worker/index.ts` has been updated with the server-side Resend transactional delivery pipeline and trimmed credential handlers, you **must run `npx wrangler deploy`** once to deploy the latest code to Cloudflare edge.
+
 Once deployed, your Cloudflare Worker will expose:
 - `GET /api/health` — Edge health check and D1 database connectivity status
+- `POST /api/auth/send-verification` — Edge OTP generation and Resend email dispatch
+- `POST /api/auth/verify-code` — Edge OTP validation and single-use invalidation
+- `POST /api/auth/register` — Authoritative D1 user creation
 - `POST /api/sync/push` — Idempotent mutation push endpoint
 - `GET /api/sync/pull` — Incremental delta sync pull endpoint
 - `POST /api/gemini/chat` — Edge AI chat endpoint

@@ -99,7 +99,7 @@ export async function sendTransactionalEmail(
   options: SendEmailOptions,
   config: EmailProviderConfig = {}
 ): Promise<{ success: boolean; provider?: string; error?: string }> {
-  const resendApiKey = config.resendApiKey || (typeof process !== 'undefined' ? process.env?.RESEND_API_KEY : '');
+  const resendApiKey = (config.resendApiKey || (typeof process !== 'undefined' ? process.env?.RESEND_API_KEY : '') || '').trim();
   const brevoApiKey = config.brevoApiKey || (typeof process !== 'undefined' ? (process.env?.BREVO_API_KEY || process.env?.SIB_API_KEY) : '');
   const sendgridApiKey = config.sendgridApiKey || (typeof process !== 'undefined' ? process.env?.SENDGRID_API_KEY : '');
   const postmarkToken = config.postmarkServerToken || (typeof process !== 'undefined' ? (process.env?.POSTMARK_SERVER_TOKEN || process.env?.POSTMARK_API_KEY) : '');
@@ -110,7 +110,7 @@ export async function sendTransactionalEmail(
   // 1. Provider: Resend (Recommended standard)
   if (resendApiKey) {
     try {
-      const fromEmail = config.resendFromEmail || (typeof process !== 'undefined' ? process.env?.RESEND_FROM_EMAIL : '') || 'Tallix <onboarding@resend.dev>';
+      const fromEmail = (config.resendFromEmail || (typeof process !== 'undefined' ? process.env?.RESEND_FROM_EMAIL : '') || 'Tallix <onboarding@resend.dev>').trim();
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {

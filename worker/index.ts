@@ -98,13 +98,14 @@ async function sendWorkerEmail(to: string, otp: string, env: Env): Promise<{ suc
   const html = buildVerificationEmailHtml(otp);
   const text = buildVerificationEmailText(otp);
 
-  if (env.RESEND_API_KEY) {
+  const resendKey = env.RESEND_API_KEY ? env.RESEND_API_KEY.trim() : '';
+  if (resendKey) {
     try {
-      const fromEmail = env.RESEND_FROM_EMAIL || 'Tallix <onboarding@resend.dev>';
+      const fromEmail = (env.RESEND_FROM_EMAIL ? env.RESEND_FROM_EMAIL.trim() : '') || 'Tallix <onboarding@resend.dev>';
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+          'Authorization': `Bearer ${resendKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
