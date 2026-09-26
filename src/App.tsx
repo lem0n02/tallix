@@ -356,6 +356,9 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
+    // Ensure syncEngine listeners and reachability checks are initialized
+    syncEngine.initListeners();
+
     // Initialize local IndexedDB database and migrate localStorage seed
     LocalRepository.initialize({
       expenses: sanitizeExpenses(INITIAL_EXPENSES),

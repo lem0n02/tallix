@@ -20,9 +20,8 @@ import {
 import { SyncStatusInfo, SyncState, SyncPushResponse, SyncPullResponse } from './syncTypes';
 import { getClientDeviceId } from './idGenerator';
 import { Expense, Group, Settlement } from '../types';
+import { buildApiUrl } from './apiConfig';
 
-// Cloudflare Worker API Base URL (configured in production via VITE_WORKER_URL)
-const SYNC_BASE_URL = (import.meta.env.VITE_WORKER_URL || '').replace(/\/$/, '');
 const ACTIVE_POLL_INTERVAL_MS = 60000; // 60s active polling while tab is visible
 
 type SyncStatusListener = (status: SyncStatusInfo) => void;
@@ -41,6 +40,7 @@ export class SyncEngine {
   private dataListeners: Set<DataUpdateListener> = new Set();
   private periodicInterval: any = null;
   private isInitialized: boolean = false;
+  private reachabilityPromise: Promise<boolean> | null = null;
 
   private handleOnline: (() => void) | null = null;
   private handleOffline: (() => void) | null = null;
@@ -63,8 +63,16 @@ export class SyncEngine {
 
     this.handleOnline = () => {
       this.isOnline = true;
-      // Single sync cycle performs reachability check and synchronizes
-      this.triggerSync();
+      if (this.state === 'offline') {
+        this.state = this.pendingCount > 0 ? 'pending' : 'synced';
+        this.notifyStatusListeners();
+      }
+      // Re-verify against real production API and trigger sync
+      this.checkReachability().then((reachable) => {
+        if (reachable && this.currentUserId) {
+          this.triggerSync();
+        }
+      });
     };
 
     this.handleOffline = () => {
@@ -81,10 +89,12 @@ export class SyncEngine {
       } else if (document.visibilityState === 'visible') {
         // Resume active polling
         this.startPeriodicSync();
-        // Perform ONE immediate sync when returning to visible
-        if (this.isOnline && this.currentUserId) {
-          this.triggerSync();
-        }
+        // When tab becomes visible again: immediate health check and sync
+        this.checkReachability().then((reachable) => {
+          if (reachable && this.currentUserId) {
+            this.triggerSync();
+          }
+        });
       }
     };
 
@@ -96,6 +106,15 @@ export class SyncEngine {
 
     // Start active polling only if document is visible
     this.startPeriodicSync();
+
+    // Startup check: perform an actual production API health check immediately
+    this.updatePendingCount().then(() => {
+      this.checkReachability().then((reachable) => {
+        if (reachable && this.currentUserId) {
+          this.triggerSync();
+        }
+      });
+    });
   }
 
   public startPeriodicSync() {
@@ -145,19 +164,26 @@ export class SyncEngine {
     this.statusListeners.clear();
     this.dataListeners.clear();
     this.isInitialized = false;
+    this.reachabilityPromise = null;
   }
 
   public setUserId(userId: string | null) {
     this.currentUserId = userId;
     if (userId && !userId.startsWith('usr_guest') && userId !== 'guest') {
       this.updatePendingCount().then(() => {
-        if (this.isOnline && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
-          this.triggerSync();
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          this.checkReachability().then((reachable) => {
+            if (reachable && this.currentUserId === userId) {
+              this.triggerSync();
+            }
+          });
         }
       });
     } else {
       this.pendingCount = 0;
-      this.state = 'synced';
+      if (this.state !== 'offline') {
+        this.state = 'synced';
+      }
       this.notifyStatusListeners();
     }
   }
@@ -224,39 +250,51 @@ export class SyncEngine {
   }
 
   public async checkReachability(): Promise<boolean> {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      this.isOnline = false;
-      this.state = 'offline';
-      this.notifyStatusListeners();
-      return false;
+    if (this.reachabilityPromise) {
+      return this.reachabilityPromise;
     }
 
-    try {
-      // Light ping to health endpoint
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${SYNC_BASE_URL}/api/health`, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: { 'Cache-Control': 'no-cache' },
-      });
-      clearTimeout(timeoutId);
+    this.reachabilityPromise = (async () => {
+      try {
+        // Ping health endpoint with a 6-second timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const healthUrl = buildApiUrl('/api/health');
 
-      const reachable = res.ok;
-      this.isOnline = reachable;
-      if (!reachable) {
+        const res = await fetch(healthUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' },
+          cache: 'no-store',
+        });
+        clearTimeout(timeoutId);
+
+        const reachable = res.ok;
+        this.isOnline = reachable;
+
+        if (reachable) {
+          // Actual API reachability takes precedence over navigator.onLine
+          if (this.state === 'offline' || this.state === 'error') {
+            this.state = this.pendingCount > 0 ? 'pending' : 'synced';
+          }
+        } else {
+          this.state = 'offline';
+        }
+
+        this.notifyStatusListeners();
+        return reachable;
+      } catch {
+        // Network timeout, connection refused, or offline
+        this.isOnline = false;
         this.state = 'offline';
-      } else if (this.state === 'offline') {
-        this.state = this.pendingCount > 0 ? 'pending' : 'synced';
+        this.notifyStatusListeners();
+        return false;
+      } finally {
+        this.reachabilityPromise = null;
       }
-      this.notifyStatusListeners();
-      return reachable;
-    } catch {
-      this.isOnline = false;
-      this.state = 'offline';
-      this.notifyStatusListeners();
-      return false;
-    }
+    })();
+
+    return this.reachabilityPromise;
   }
 
   // Main bidirectional synchronization cycle
@@ -264,30 +302,30 @@ export class SyncEngine {
     if (this.isSyncInProgress) {
       return { success: false, error: 'Sync already in progress' };
     }
-
-    // Guest isolation: never push or pull to remote Cloudflare D1/APIs during guest mode
-    if (this.currentUserId && (this.currentUserId.startsWith('usr_guest') || this.currentUserId === 'guest')) {
-      return { success: true };
-    }
-
-    const reachable = await this.checkReachability();
-    if (!reachable) {
-      this.state = 'offline';
-      this.notifyStatusListeners();
-      return { success: false, error: 'Device is offline' };
-    }
-
-    if (!this.currentUserId) {
-      this.state = 'synced';
-      this.notifyStatusListeners();
-      return { success: true };
-    }
-
     this.isSyncInProgress = true;
-    this.state = 'syncing';
-    this.notifyStatusListeners();
 
     try {
+      // Guest isolation: never push or pull to remote Cloudflare D1/APIs during guest mode
+      if (this.currentUserId && (this.currentUserId.startsWith('usr_guest') || this.currentUserId === 'guest')) {
+        return { success: true };
+      }
+
+      const reachable = await this.checkReachability();
+      if (!reachable) {
+        this.state = 'offline';
+        this.notifyStatusListeners();
+        return { success: false, error: 'Device is offline' };
+      }
+
+      if (!this.currentUserId) {
+        this.state = this.pendingCount > 0 ? 'pending' : 'synced';
+        this.notifyStatusListeners();
+        return { success: true };
+      }
+
+      this.state = 'syncing';
+      this.notifyStatusListeners();
+
       // 1. PUSH PHASE: upload local mutations
       const pendingMutations = await getPendingMutations();
       if (pendingMutations.length > 0) {
@@ -300,7 +338,8 @@ export class SyncEngine {
           mutations: pendingMutations,
         };
 
-        const pushRes = await fetch(`${SYNC_BASE_URL}/api/sync/push`, {
+        const pushUrl = buildApiUrl('/api/sync/push');
+        const pushRes = await fetch(pushUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pushPayload),
@@ -324,7 +363,7 @@ export class SyncEngine {
 
       // 2. PULL PHASE: fetch latest server updates
       const lastSyncToken = (await idbGetMetadata<string>('last_sync_timestamp')) || '';
-      const pullUrl = `${SYNC_BASE_URL}/api/sync/pull?since=${encodeURIComponent(lastSyncToken)}&userId=${encodeURIComponent(
+      const pullUrl = `${buildApiUrl('/api/sync/pull')}?since=${encodeURIComponent(lastSyncToken)}&userId=${encodeURIComponent(
         this.currentUserId || ''
       )}`;
 
@@ -333,73 +372,75 @@ export class SyncEngine {
         headers: { 'Cache-Control': 'no-cache' },
       });
 
-      if (pullRes.ok) {
-        const pullData: SyncPullResponse = await pullRes.json();
+      if (!pullRes.ok) {
+        throw new Error(`Sync pull failed with HTTP ${pullRes.status}`);
+      }
 
-        if (pullData.success) {
-          let hasLocalUpdates = false;
+      const pullData: SyncPullResponse = await pullRes.json();
 
-          // Merge groups
-          if (pullData.groups && pullData.groups.length > 0) {
-            for (const grp of pullData.groups) {
-              await idbPut(STORES.GROUPS, grp);
-              hasLocalUpdates = true;
-            }
+      if (pullData.success) {
+        let hasLocalUpdates = false;
+
+        // Merge groups
+        if (pullData.groups && pullData.groups.length > 0) {
+          for (const grp of pullData.groups) {
+            await idbPut(STORES.GROUPS, grp);
+            hasLocalUpdates = true;
           }
+        }
 
-          if (pullData.deletedGroupIds && pullData.deletedGroupIds.length > 0) {
-            for (const id of pullData.deletedGroupIds) {
-              await idbDelete(STORES.GROUPS, id);
-              hasLocalUpdates = true;
-            }
+        if (pullData.deletedGroupIds && pullData.deletedGroupIds.length > 0) {
+          for (const id of pullData.deletedGroupIds) {
+            await idbDelete(STORES.GROUPS, id);
+            hasLocalUpdates = true;
           }
+        }
 
-          // Merge expenses
-          if (pullData.expenses && pullData.expenses.length > 0) {
-            for (const exp of pullData.expenses) {
-              await idbPut(STORES.EXPENSES, exp);
-              hasLocalUpdates = true;
-            }
+        // Merge expenses
+        if (pullData.expenses && pullData.expenses.length > 0) {
+          for (const exp of pullData.expenses) {
+            await idbPut(STORES.EXPENSES, exp);
+            hasLocalUpdates = true;
           }
+        }
 
-          if (pullData.deletedExpenseIds && pullData.deletedExpenseIds.length > 0) {
-            for (const id of pullData.deletedExpenseIds) {
-              await idbDelete(STORES.EXPENSES, id);
-              hasLocalUpdates = true;
-            }
+        if (pullData.deletedExpenseIds && pullData.deletedExpenseIds.length > 0) {
+          for (const id of pullData.deletedExpenseIds) {
+            await idbDelete(STORES.EXPENSES, id);
+            hasLocalUpdates = true;
           }
+        }
 
-          // Merge settlements
-          if (pullData.settlements && pullData.settlements.length > 0) {
-            for (const stl of pullData.settlements) {
-              await idbPut(STORES.SETTLEMENTS, stl);
-              hasLocalUpdates = true;
-            }
+        // Merge settlements
+        if (pullData.settlements && pullData.settlements.length > 0) {
+          for (const stl of pullData.settlements) {
+            await idbPut(STORES.SETTLEMENTS, stl);
+            hasLocalUpdates = true;
           }
+        }
 
-          if (pullData.deletedSettlementIds && pullData.deletedSettlementIds.length > 0) {
-            for (const id of pullData.deletedSettlementIds) {
-              await idbDelete(STORES.SETTLEMENTS, id);
-              hasLocalUpdates = true;
-            }
+        if (pullData.deletedSettlementIds && pullData.deletedSettlementIds.length > 0) {
+          for (const id of pullData.deletedSettlementIds) {
+            await idbDelete(STORES.SETTLEMENTS, id);
+            hasLocalUpdates = true;
           }
+        }
 
-          // Merge registered users
-          if (pullData.registeredUsers && pullData.registeredUsers.length > 0) {
-            for (const u of pullData.registeredUsers) {
-              await idbPut(STORES.USERS, u);
-              hasLocalUpdates = true;
-            }
+        // Merge registered users
+        if (pullData.registeredUsers && pullData.registeredUsers.length > 0) {
+          for (const u of pullData.registeredUsers) {
+            await idbPut(STORES.USERS, u);
+            hasLocalUpdates = true;
           }
+        }
 
-          // Save new sync checkpoint
-          if (pullData.serverTimestamp) {
-            await idbSetMetadata('last_sync_timestamp', pullData.serverTimestamp);
-          }
+        // Save new sync checkpoint
+        if (pullData.serverTimestamp) {
+          await idbSetMetadata('last_sync_timestamp', pullData.serverTimestamp);
+        }
 
-          if (hasLocalUpdates) {
-            this.notifyDataListeners();
-          }
+        if (hasLocalUpdates) {
+          this.notifyDataListeners();
         }
       }
 
