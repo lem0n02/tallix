@@ -21,7 +21,6 @@
     }
   ],
   "vars": {
-    "ENVIRONMENT": "production",
-    "RESEND_FROM_EMAIL": "Tallix <onboarding@resend.dev>"
+    "ENVIRONMENT": "production"
   }
 }

@@ -10,8 +10,6 @@ import {
 } from './syncQueue';
 import {
   STORES,
-  idbGet,
-  idbGetAll,
   idbPut,
   idbDelete,
   idbGetMetadata,
@@ -19,7 +17,6 @@ import {
 } from './indexedDB';
 import { SyncStatusInfo, SyncState, SyncPushResponse, SyncPullResponse } from './syncTypes';
 import { getClientDeviceId } from './idGenerator';
-import { Expense, Group, Settlement } from '../types';
 import { buildApiUrl } from './apiConfig';
 
 const ACTIVE_POLL_INTERVAL_MS = 60000; // 60s active polling while tab is visible
@@ -39,6 +36,8 @@ export class SyncEngine {
   private statusListeners: Set<SyncStatusListener> = new Set();
   private dataListeners: Set<DataUpdateListener> = new Set();
   private periodicInterval: any = null;
+  private retryTimer: any = null;
+  private consecutiveFailures: number = 0;
   private isInitialized: boolean = false;
   private reachabilityPromise: Promise<boolean> | null = null;
 
@@ -62,6 +61,8 @@ export class SyncEngine {
     resetStuckSyncingMutations().catch(console.warn);
 
     this.handleOnline = () => {
+      this.clearRetryTimer();
+      this.consecutiveFailures = 0;
       this.isOnline = true;
       if (this.state === 'offline') {
         this.state = this.pendingCount > 0 ? 'pending' : 'synced';
@@ -79,6 +80,7 @@ export class SyncEngine {
       this.isOnline = false;
       this.state = 'offline';
       this.notifyStatusListeners();
+      this.scheduleRetry();
     };
 
     this.handleVisibilityChange = () => {
@@ -86,6 +88,7 @@ export class SyncEngine {
       if (document.visibilityState === 'hidden') {
         // Stop active polling when the tab is in the background
         this.stopPeriodicSync();
+        this.clearRetryTimer();
       } else if (document.visibilityState === 'visible') {
         // Resume active polling
         this.startPeriodicSync();
@@ -129,8 +132,17 @@ export class SyncEngine {
         this.stopPeriodicSync();
         return;
       }
+
+      // If online and user is active, trigger sync heartbeat
       if (this.isOnline && !this.isSyncInProgress && this.currentUserId) {
-        this.triggerSync();
+        this.triggerSync().catch(console.warn);
+      } else if (!this.isOnline || this.state === 'offline' || this.state === 'error') {
+        // Self-healing: if currently offline or errored, probe reachability and recover automatically!
+        this.checkReachability().then((reachable) => {
+          if (reachable && this.currentUserId) {
+            this.triggerSync().catch(console.warn);
+          }
+        });
       }
     }, ACTIVE_POLL_INTERVAL_MS);
   }
@@ -142,8 +154,40 @@ export class SyncEngine {
     }
   }
 
+  private clearRetryTimer() {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  private scheduleRetry() {
+    if (this.retryTimer) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    // Exponential backoff: 3s, 6s, 12s, max 30s
+    const delay = Math.min(30000, 3000 * Math.pow(2, Math.min(this.consecutiveFailures, 3)));
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      this.checkReachability().then((reachable) => {
+        if (reachable) {
+          this.consecutiveFailures = 0;
+          if (this.currentUserId) {
+            this.triggerSync().catch(console.warn);
+          }
+        } else {
+          // If still unreachable, continue backoff retry
+          this.scheduleRetry();
+        }
+      });
+    }, delay);
+  }
+
   public destroy() {
     this.stopPeriodicSync();
+    this.clearRetryTimer();
 
     if (typeof window !== 'undefined') {
       if (this.handleOnline) {
@@ -167,8 +211,34 @@ export class SyncEngine {
     this.reachabilityPromise = null;
   }
 
+  public getUserId(): string | null {
+    return this.currentUserId;
+  }
+
+  public resetUserState() {
+    this.clearRetryTimer();
+    this.currentUserId = null;
+    this.consecutiveFailures = 0;
+    this.lastError = null;
+    this.lastSyncedAt = null;
+    this.pendingCount = 0;
+    if (this.state !== 'offline') {
+      this.state = 'synced';
+    }
+    this.notifyStatusListeners();
+  }
+
   public setUserId(userId: string | null) {
+    const previousUserId = this.currentUserId;
     this.currentUserId = userId;
+
+    if (previousUserId !== userId) {
+      this.clearRetryTimer();
+      this.consecutiveFailures = 0;
+      this.lastError = null;
+      this.lastSyncedAt = null;
+    }
+
     if (userId && !userId.startsWith('usr_guest') && userId !== 'guest') {
       this.updatePendingCount().then(() => {
         if (typeof document === 'undefined' || document.visibilityState === 'visible') {
@@ -181,6 +251,7 @@ export class SyncEngine {
       });
     } else {
       this.pendingCount = 0;
+      this.lastSyncedAt = null;
       if (this.state !== 'offline') {
         this.state = 'synced';
       }
@@ -256,9 +327,9 @@ export class SyncEngine {
 
     this.reachabilityPromise = (async () => {
       try {
-        // Ping health endpoint with a 6-second timeout
+        // Ping health endpoint with an 8-second timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         const healthUrl = buildApiUrl('/api/health');
 
         const res = await fetch(healthUrl, {
@@ -270,23 +341,29 @@ export class SyncEngine {
         clearTimeout(timeoutId);
 
         const reachable = res.ok;
-        this.isOnline = reachable;
-
         if (reachable) {
+          this.isOnline = true;
+          this.consecutiveFailures = 0;
+          this.clearRetryTimer();
           // Actual API reachability takes precedence over navigator.onLine
           if (this.state === 'offline' || this.state === 'error') {
             this.state = this.pendingCount > 0 ? 'pending' : 'synced';
           }
         } else {
+          this.consecutiveFailures++;
+          this.isOnline = false;
           this.state = 'offline';
+          this.scheduleRetry();
         }
 
         this.notifyStatusListeners();
         return reachable;
       } catch {
         // Network timeout, connection refused, or offline
+        this.consecutiveFailures++;
         this.isOnline = false;
         this.state = 'offline';
+        this.scheduleRetry();
         this.notifyStatusListeners();
         return false;
       } finally {
@@ -339,13 +416,25 @@ export class SyncEngine {
         };
 
         const pushUrl = buildApiUrl('/api/sync/push');
+        const pushController = new AbortController();
+        const pushTimeout = setTimeout(() => pushController.abort(), 12000);
+
         const pushRes = await fetch(pushUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pushPayload),
+          signal: pushController.signal,
         });
+        clearTimeout(pushTimeout);
 
         if (!pushRes.ok) {
+          if (pushRes.status === 401 || pushRes.status === 403) {
+            this.isOnline = true; // API is reachable, this is an auth session issue
+            this.state = 'error';
+            this.lastError = `Authentication error (${pushRes.status}). Session verification required.`;
+            this.notifyStatusListeners();
+            return { success: false, error: this.lastError };
+          }
           throw new Error(`Sync push failed with HTTP ${pushRes.status}`);
         }
 
@@ -361,18 +450,31 @@ export class SyncEngine {
         }
       }
 
-      // 2. PULL PHASE: fetch latest server updates
-      const lastSyncToken = (await idbGetMetadata<string>('last_sync_timestamp')) || '';
+      // 2. PULL PHASE: fetch latest server updates with per-user isolated sync token
+      const syncMetaKey = this.currentUserId ? `last_sync_timestamp_${this.currentUserId}` : 'last_sync_timestamp';
+      const lastSyncToken = (await idbGetMetadata<string>(syncMetaKey)) || '';
       const pullUrl = `${buildApiUrl('/api/sync/pull')}?since=${encodeURIComponent(lastSyncToken)}&userId=${encodeURIComponent(
         this.currentUserId || ''
       )}`;
 
+      const pullController = new AbortController();
+      const pullTimeout = setTimeout(() => pullController.abort(), 12000);
+
       const pullRes = await fetch(pullUrl, {
         method: 'GET',
         headers: { 'Cache-Control': 'no-cache' },
+        signal: pullController.signal,
       });
+      clearTimeout(pullTimeout);
 
       if (!pullRes.ok) {
+        if (pullRes.status === 401 || pullRes.status === 403) {
+          this.isOnline = true; // API is reachable, this is an auth session issue
+          this.state = 'error';
+          this.lastError = `Authentication error (${pullRes.status}). Session verification required.`;
+          this.notifyStatusListeners();
+          return { success: false, error: this.lastError };
+        }
         throw new Error(`Sync pull failed with HTTP ${pullRes.status}`);
       }
 
@@ -434,9 +536,9 @@ export class SyncEngine {
           }
         }
 
-        // Save new sync checkpoint
+        // Save new sync checkpoint isolated per user
         if (pullData.serverTimestamp) {
-          await idbSetMetadata('last_sync_timestamp', pullData.serverTimestamp);
+          await idbSetMetadata(syncMetaKey, pullData.serverTimestamp);
         }
 
         if (hasLocalUpdates) {
@@ -447,6 +549,9 @@ export class SyncEngine {
       this.pendingCount = await getPendingCount();
       this.lastSyncedAt = new Date();
       this.lastError = null;
+      this.consecutiveFailures = 0;
+      this.clearRetryTimer();
+      this.isOnline = true;
       this.state = this.pendingCount > 0 ? 'pending' : 'synced';
       this.notifyStatusListeners();
 
@@ -455,7 +560,21 @@ export class SyncEngine {
       console.warn('[SyncEngine] Sync cycle encountered error:', err);
       this.lastError = err?.message || 'Sync failed';
       this.pendingCount = await getPendingCount();
-      this.state = this.isOnline ? 'error' : 'offline';
+
+      const isAuthError = this.lastError.includes('401') || this.lastError.includes('403');
+      if (isAuthError) {
+        this.isOnline = true;
+        this.state = 'error';
+      } else {
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures >= 2) {
+          this.isOnline = false;
+          this.state = 'offline';
+        } else {
+          this.state = 'error';
+        }
+        this.scheduleRetry();
+      }
       this.notifyStatusListeners();
       return { success: false, error: this.lastError };
     } finally {

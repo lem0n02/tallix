@@ -1009,6 +1009,7 @@ export default function App() {
     setIsAuthenticated(false);
     setIsGuestSession(false);
     setUser(INITIAL_USER);
+    syncEngine.resetUserState();
     localStorage.removeItem('tallix_auth');
     localStorage.removeItem('tallix_user');
     try {

@@ -20,8 +20,11 @@ export function generateEntityId(prefix: 'exp' | 'grp' | 'stl' | 'usr' | 'log' |
 
 export function getClientDeviceId(): string {
   const KEY = 'tallix_device_id';
-  if (typeof window === 'undefined') return 'server_device';
-  let deviceId = localStorage.getItem(KEY);
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'server_device';
+  let deviceId: string | null = null;
+  try {
+    deviceId = localStorage.getItem(KEY);
+  } catch {}
   if (!deviceId) {
     deviceId = `dev_${generateUUID().replace(/-/g, '').slice(0, 16)}`;
     localStorage.setItem(KEY, deviceId);
