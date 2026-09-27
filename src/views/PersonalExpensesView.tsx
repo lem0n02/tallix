@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Expense } from '../types';
+import { compareHistoryItemsDesc } from '../utils/historyEngine';
 import { Plus, Search, Trash2, Calendar, CreditCard, Tag, DollarSign, TrendingUp, Edit } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -52,7 +53,7 @@ export const PersonalExpensesView: React.FC<PersonalExpensesViewProps> = ({
         }
         return true;
       })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort(compareHistoryItemsDesc);
   }, [personalExpenses, searchTerm, selectedCategory]);
 
   // Compute total amount

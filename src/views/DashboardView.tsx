@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Expense, Group, Settlement, UserProfile } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
 import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
+import { compareHistoryItemsDesc } from '../utils/historyEngine';
 import { ActiveTab } from '../components/Sidebar';
 import {
   ArrowUpRight,
@@ -123,11 +124,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return expenses.filter((exp) => isPaidOrOwnedByCurrentUser(exp));
   }, [expenses, user]);
 
-  // Filtered & Sorted Expenses
+  // Filtered & Sorted Expenses (Strictly latest-first)
   const sortedExpenses = React.useMemo(() => {
-    return [...dashboardEligibleExpenses].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
+    return [...dashboardEligibleExpenses].sort(compareHistoryItemsDesc);
   }, [dashboardEligibleExpenses]);
 
   const filteredExpenses = sortedExpenses.filter((exp) => {

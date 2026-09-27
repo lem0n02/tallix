@@ -301,6 +301,44 @@ export class LocalRepository {
     return record;
   }
 
+  public static async cancelSettlement(settlement: Settlement, userId: string): Promise<Settlement> {
+    const cancelledRecord: Settlement = {
+      ...settlement,
+      status: 'Cancelled',
+    };
+
+    await idbPut(STORES.SETTLEMENTS, cancelledRecord);
+
+    await enqueueMutation({
+      entityType: 'settlement',
+      entityId: cancelledRecord.id,
+      operation: 'UPDATE',
+      payload: cancelledRecord,
+      userId,
+      groupId: cancelledRecord.groupId,
+    });
+
+    await syncEngine.updatePendingCount();
+    syncEngine.triggerSync().catch(console.warn);
+
+    return cancelledRecord;
+  }
+
+  public static async deleteSettlement(settlementId: string, userId: string): Promise<void> {
+    await idbDelete(STORES.SETTLEMENTS, settlementId);
+
+    await enqueueMutation({
+      entityType: 'settlement',
+      entityId: settlementId,
+      operation: 'DELETE',
+      payload: { id: settlementId },
+      userId,
+    });
+
+    await syncEngine.updatePendingCount();
+    syncEngine.triggerSync().catch(console.warn);
+  }
+
   // --- Users & Logs ---
   public static async getAllRegisteredUsers(): Promise<RegisteredUser[]> {
     return idbGetAll<RegisteredUser>(STORES.USERS);

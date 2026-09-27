@@ -72,6 +72,9 @@ export interface Settlement {
   id: string;
   groupId: string;
   groupName: string;
+  settlementType?: 'SETTLE_UP' | 'SETTLE_DOWN';
+  requestedByUserId?: string;
+  createdBy?: string;
   fromUserId: string;
   fromUserName: string;
   toUserId: string;
@@ -81,7 +84,7 @@ export interface Settlement {
   amount_paisa?: number;
   currency: string;
   paymentMethod?: 'Cash' | 'bKash' | 'Nagad' | 'Bank Transfer' | 'Other' | string;
-  status: 'Pending' | 'Accepted' | 'Rejected' | 'Completed' | 'Pending Approval';
+  status: 'Pending' | 'Accepted' | 'Rejected' | 'Completed' | 'Pending Approval' | 'Cancelled';
   createdAt: string;
   proofUrl?: string;
   note?: string;

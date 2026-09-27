@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Group, Expense, Settlement, UserProfile } from '../types';
 import { calculateGroupMembersWithBalances, isMemberMatch } from '../utils/balanceEngine';
 import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
@@ -23,7 +23,9 @@ import {
   Receipt,
   ArrowDownLeft,
   ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
+import { compareHistoryItemsDesc } from '../utils/historyEngine';
 import {
   ResponsiveContainer,
   LineChart,
@@ -47,13 +49,15 @@ interface SharedGroupsViewProps {
   onOpenNewGroup: () => void;
   onOpenJoinGroup: () => void;
   onOpenNewTransaction: () => void;
-  onOpenSettleUp?: (groupId?: string) => void;
+  onOpenSettleUp?: (groupId?: string, direction?: 'UP' | 'DOWN') => void;
   onDeleteGroup?: (groupId: string) => void;
   onRemoveMember?: (groupId: string, memberId: string) => void;
   onDeleteExpense?: (expenseId: string) => void;
   onEditExpense?: (expense: Expense) => void;
   onAcceptSettlement?: (settlementId: string) => void;
   onRejectSettlement?: (settlementId: string) => void;
+  onEditPendingSettlement?: (settlement: Settlement) => void;
+  onDeletePendingSettlement?: (settlementId: string) => void;
 }
 
 const MEMBER_LINE_COLORS = [
@@ -84,10 +88,21 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   onEditExpense,
   onAcceptSettlement,
   onRejectSettlement,
+  onEditPendingSettlement,
+  onDeletePendingSettlement,
 }) => {
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
   const [squadToDelete, setSquadToDelete] = useState<Group | null>(null);
+  const [settlementToDelete, setSettlementToDelete] = useState<Settlement | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [spendingViewMode, setSpendingViewMode] = useState<'donut' | 'timeline'>('donut');
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const { t, formatCurrency, formatNumber, formatDate } = useLanguage();
 
@@ -121,16 +136,20 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
     return allExpenses && allExpenses.length > 0 ? allExpenses : expenses;
   }, [allExpenses, expenses]);
 
-  // Expenses for the currently selected squad
+  // Expenses for the currently selected squad (Strictly latest-first)
   const groupExpenses = useMemo(() => {
     if (!activeGroup) return [];
-    return groupSourceExpenses.filter((exp) => exp.isShared && exp.groupId === activeGroup.id);
+    return groupSourceExpenses
+      .filter((exp) => exp.isShared && exp.groupId === activeGroup.id)
+      .sort(compareHistoryItemsDesc);
   }, [groupSourceExpenses, activeGroup]);
 
-  // Settlements for the currently selected squad
+  // Settlements for the currently selected squad (Strictly latest-first)
   const groupSettlements = useMemo(() => {
     if (!activeGroup) return [];
-    return settlements.filter((stl) => stl.groupId === activeGroup.id);
+    return settlements
+      .filter((stl) => stl.groupId === activeGroup.id)
+      .sort(compareHistoryItemsDesc);
   }, [settlements, activeGroup]);
 
   const pendingSettlements = useMemo(() => {
@@ -455,21 +474,28 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
               {onOpenSettleUp ? (
                 <button
-                  onClick={() => onOpenSettleUp(activeGroup.id)}
-                  className="bg-amber-600 hover:bg-amber-500 text-white text-xs sm:text-sm font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-600/20 active:scale-[0.98]"
+                  onClick={() => onOpenSettleUp(activeGroup.id, 'UP')}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
                 >
-                  <Scale className="w-4 h-4" />
+                  <ArrowUpRight className="w-4 h-4" />
                   <span>{t('settleUp')}</span>
                 </button>
-              ) : (
-                <div />
-              )}
+              ) : null}
+              {onOpenSettleUp ? (
+                <button
+                  onClick={() => onOpenSettleUp(activeGroup.id, 'DOWN')}
+                  className="bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-600/20 active:scale-[0.98]"
+                >
+                  <ArrowDownRight className="w-4 h-4" />
+                  <span>{t('settleDown') || 'Settle Down'}</span>
+                </button>
+              ) : null}
               <button
                 onClick={onOpenNewTransaction}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/25 active:scale-[0.98]"
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/25 active:scale-[0.98]"
               >
                 <Plus className="w-4 h-4" />
                 <span>{t('addExpenseToSquad')}</span>
@@ -574,7 +600,19 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                 {pendingSettlements.map((stl) => {
                   const isIncoming =
                     currentUserMember &&
-                    isMemberMatch(currentUserMember, stl.toUserId, stl.toUserName);
+                    (stl.settlementType === 'SETTLE_DOWN'
+                      ? isMemberMatch(currentUserMember, stl.fromUserId, stl.fromUserName)
+                      : isMemberMatch(currentUserMember, stl.toUserId, stl.toUserName));
+
+                  const isRequester = Boolean(
+                    (stl.requestedByUserId && currentUser && stl.requestedByUserId === currentUser.id) ||
+                    (stl.createdBy && currentUser && stl.createdBy === currentUser.id) ||
+                    (currentUserMember && (
+                      stl.settlementType === 'SETTLE_DOWN'
+                        ? isMemberMatch(currentUserMember, stl.toUserId, stl.toUserName)
+                        : isMemberMatch(currentUserMember, stl.fromUserId, stl.fromUserName)
+                    ))
+                  );
 
                   return (
                     <div
@@ -583,6 +621,13 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-xs font-semibold text-[#fafafa] flex-wrap">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono border ${
+                            stl.settlementType === 'SETTLE_DOWN'
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          }`}>
+                            {stl.settlementType === 'SETTLE_DOWN' ? 'SETTLE DOWN ↘' : 'SETTLE UP ↗'}
+                          </span>
                           <span className="text-amber-400 font-bold">{stl.fromUserName}</span>
                           <ArrowRight className="w-3.5 h-3.5 text-[#71717a]" />
                           <span className="text-emerald-400 font-bold">{stl.toUserName}</span>
@@ -613,6 +658,27 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                             >
                               <XCircle className="w-3.5 h-3.5" />
                               <span>{t('reject')}</span>
+                            </button>
+                          </>
+                        ) : isRequester ? (
+                          <>
+                            {onEditPendingSettlement && (
+                              <button
+                                onClick={() => onEditPendingSettlement(stl)}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer border border-[#3f3f46]"
+                                title="Edit Pending Request"
+                              >
+                                <Edit className="w-3.5 h-3.5 text-blue-400" />
+                                <span>Edit</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setSettlementToDelete(stl)}
+                              className="px-2.5 py-1.5 rounded-lg bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer border border-rose-500/30"
+                              title="Delete Pending Request"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
                             </button>
                           </>
                         ) : (
@@ -991,13 +1057,22 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                     </span>
                   </div>
                   {onOpenSettleUp && (
-                    <button
-                      onClick={() => onOpenSettleUp(activeGroup.id)}
-                      className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('settleUp')}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onOpenSettleUp(activeGroup.id, 'UP')}
+                        className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>{t('settleUp')}</span>
+                      </button>
+                      <button
+                        onClick={() => onOpenSettleUp(activeGroup.id, 'DOWN')}
+                        className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <ArrowDownRight className="w-3.5 h-3.5" />
+                        <span>{t('settleDown') || 'Settle Down'}</span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -1012,6 +1087,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                       const isAccepted = stl.status === 'Accepted' || stl.status === 'Completed';
                       const isRejected = stl.status === 'Rejected';
                       const isPending = stl.status === 'Pending' || stl.status === 'Pending Approval';
+                      const isUp = stl.settlementType === 'SETTLE_UP' || (currentUser && isMemberMatch({ id: currentUser.id, name: currentUser.name }, stl.fromUserId, stl.fromUserName));
 
                       return (
                         <div
@@ -1019,7 +1095,14 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                           className="p-3 rounded-xl bg-[#09090b] border border-[#27272a] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                         >
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-xs font-semibold text-[#fafafa]">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-[#fafafa] flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono border ${
+                                isUp
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              }`}>
+                                {isUp ? 'SETTLE UP ↗' : 'SETTLE DOWN ↘'}
+                              </span>
                               <span className="text-amber-400 font-bold">{stl.fromUserName}</span>
                               <ArrowRight className="w-3.5 h-3.5 text-[#71717a]" />
                               <span className="text-emerald-400 font-bold">{stl.toUserName}</span>
@@ -1102,6 +1185,60 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Delete Pending Settlement Confirmation Modal */}
+      {settlementToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center gap-3 text-rose-500">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#fafafa]">Delete this pending settlement request?</h3>
+                <p className="text-xs text-[#a1a1aa]">This action removes the pending claim without modifying squad balances.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#a1a1aa] leading-relaxed">
+              Are you sure you want to cancel and delete this pending request of <strong className="text-white font-mono">{formatCurrency(settlementToDelete.amount)}</strong>? This will not affect any expense totals, splits, or balances.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#27272a]">
+              <button
+                type="button"
+                onClick={() => setSettlementToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] rounded-lg transition-colors cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = settlementToDelete.id;
+                  setSettlementToDelete(null);
+                  if (onDeletePendingSettlement) {
+                    onDeletePendingSettlement(id);
+                  }
+                  setToastMessage('Pending settlement request deleted successfully.');
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-rose-600/20"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Small Toast Success Message */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#18181b] border border-emerald-500/40 text-emerald-300 px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

@@ -282,6 +282,8 @@ export default function App() {
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [isJoinGroupOpen, setIsJoinGroupOpen] = useState(false);
   const [isSettleUpOpen, setIsSettleUpOpen] = useState(false);
+  const [settleDirection, setSettleDirection] = useState<'UP' | 'DOWN'>('UP');
+  const [settlementToEdit, setSettlementToEdit] = useState<Settlement | null>(null);
   const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -1482,6 +1484,41 @@ export default function App() {
     ]);
   };
 
+  const handleEditPendingSettlement = (stl: Settlement) => {
+    setSettlementToEdit(stl);
+    setSettleDirection(stl.settlementType === 'SETTLE_DOWN' ? 'DOWN' : 'UP');
+    setIsSettleUpOpen(true);
+  };
+
+  const handleDeletePendingSettlement = async (settlementId: string) => {
+    const target = (isGuestSession ? guestSettlements : settlements).find((s) => s.id === settlementId);
+    if (!target) return;
+
+    const cancelledRecord: Settlement = {
+      ...target,
+      status: 'Cancelled',
+    };
+
+    if (isGuestSession) {
+      setGuestSettlements((prev) => prev.map((s) => (s.id === settlementId ? cancelledRecord : s)));
+      return;
+    }
+
+    await LocalRepository.cancelSettlement(target, user.id);
+    setSettlements((prev) => prev.map((s) => (s.id === settlementId ? cancelledRecord : s)));
+
+    setAuditLogs((prev) => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        level: 'INFO',
+        message: `Pending settlement cancelled: ID ${settlementId}`,
+        source: 'settlement-engine',
+      },
+      ...prev,
+    ]);
+  };
+
   const handleSettleUp = (settlementData: Settlement | any) => {
     const activeGroupList = isGuestSession ? guestGroups : groups;
     const matchedGroup = activeGroupList.find((g) => g.id === settlementData.groupId);
@@ -1510,6 +1547,9 @@ export default function App() {
       id: settlementData.id || generateEntityId('stl'),
       groupId: settlementData.groupId || matchedGroup?.id || '',
       groupName: matchedGroup?.name || settlementData.groupName || 'Shared Squad',
+      settlementType: settlementData.settlementType || (settlementData.fromUserId === activeUser.id ? 'SETTLE_UP' : 'SETTLE_DOWN'),
+      requestedByUserId: settlementData.requestedByUserId || activeUser.id,
+      createdBy: settlementData.createdBy || activeUser.id,
       fromUserId: payerMember?.id || settlementData.fromUserId || activeUser.id,
       fromUserName: payerMember?.name || payerName,
       toUserId: payeeMember?.id || settlementData.toUserId || generateEntityId('usr'),
@@ -1520,18 +1560,31 @@ export default function App() {
       currency: settlementData.currency || matchedGroup?.currency || 'BDT',
       paymentMethod: settlementData.paymentMethod || 'bKash',
       status: settlementData.status || 'Pending',
-      createdAt: settlementData.createdAt || new Date().toISOString().split('T')[0],
+      createdAt: settlementData.createdAt || new Date().toISOString(),
       proofUrl: settlementData.proofUrl,
       note: settlementData.note,
     };
 
+    const isEditingExisting = Boolean(settlementToEdit && settlementToEdit.id === newSettlement.id);
+
     if (isGuestSession) {
-      setGuestSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
+      if (isEditingExisting) {
+        setGuestSettlements((prev) => prev.map((s) => (s.id === newSettlement.id ? newSettlement : s)));
+      } else {
+        setGuestSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
+      }
+      setSettlementToEdit(null);
       return;
     }
 
-    LocalRepository.createSettlement(newSettlement, user.id);
-    setSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
+    if (isEditingExisting) {
+      LocalRepository.updateSettlement(newSettlement, user.id);
+      setSettlements((prev) => prev.map((s) => (s.id === newSettlement.id ? newSettlement : s)));
+    } else {
+      LocalRepository.createSettlement(newSettlement, user.id);
+      setSettlements((prev) => [newSettlement, ...prev.filter((s) => s.id !== newSettlement.id)]);
+    }
+    setSettlementToEdit(null);
 
     setAuditLogs((prev) => [
       {
@@ -1744,8 +1797,9 @@ export default function App() {
               onOpenNewGroup={() => setIsNewGroupOpen(true)}
               onOpenJoinGroup={() => setIsJoinGroupOpen(true)}
               onOpenNewTransaction={() => setIsNewTransactionOpen(true)}
-              onOpenSettleUp={(grpId) => {
+              onOpenSettleUp={(grpId, dir) => {
                 if (grpId) handleSelectGroup(grpId);
+                setSettleDirection(dir || 'UP');
                 setIsSettleUpOpen(true);
               }}
               onDeleteGroup={handleDeleteGroup}
@@ -1754,6 +1808,8 @@ export default function App() {
               onEditExpense={(exp) => setEditingExpense(exp)}
               onAcceptSettlement={handleAcceptSettlement}
               onRejectSettlement={handleRejectSettlement}
+              onEditPendingSettlement={handleEditPendingSettlement}
+              onDeletePendingSettlement={handleDeletePendingSettlement}
             />
           )}
 
@@ -1859,10 +1915,15 @@ export default function App() {
 
       <SettleUpModal
         isOpen={isSettleUpOpen}
-        onClose={() => setIsSettleUpOpen(false)}
+        onClose={() => {
+          setIsSettleUpOpen(false);
+          setSettlementToEdit(null);
+        }}
         groups={userGroups}
         currentUser={activeUser}
         defaultGroupId={selectedGroupId}
+        initialDirection={settleDirection}
+        settlementToEdit={settlementToEdit}
         onSettle={handleSettleUp}
         onRecordSettlement={handleSettleUp}
       />
