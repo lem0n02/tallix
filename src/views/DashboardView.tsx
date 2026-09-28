@@ -3,6 +3,7 @@ import { Expense, Group, Settlement, UserProfile } from '../types';
 import { isMemberMatch } from '../utils/balanceEngine';
 import { toPaisa, fromPaisa, sumExactAmounts } from '../utils/money';
 import { compareHistoryItemsDesc } from '../utils/historyEngine';
+import { isUserExpense } from '../utils/pdfReportGenerator';
 import { ActiveTab } from '../components/Sidebar';
 import {
   ArrowUpRight,
@@ -71,26 +72,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const { t, formatCurrency, formatNumber, formatDate, toBengaliNumerals } = useLanguage();
 
-  // Helper to determine if an expense was paid or owned by the current user
+  // Helper to determine if an expense was paid or owned by the current user (authoritative shared definition)
   const isPaidOrOwnedByCurrentUser = (exp: Expense) => {
-    const cleanUserEmail = (user.email || '').toLowerCase();
-    const userMember = { id: user.id, name: user.name, email: user.email };
-    return (
-      isMemberMatch(userMember, exp.paidByUserId, exp.paidByName) ||
-      exp.paidByUserId === user.id ||
-      exp.createdBy === user.id ||
-      (exp as any).createdByEmail?.toLowerCase() === cleanUserEmail
-    );
+    return isUserExpense(exp, user);
   };
 
   // Personal Expenses: money personally paid by the current user
-  const personalExpensesList = expenses.filter((e) => !e.isShared && isPaidOrOwnedByCurrentUser(e));
+  const personalExpensesList = expenses.filter((e) => !e.isShared && isUserExpense(e, user));
   const personalExpensesAmount = sumExactAmounts(
     personalExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
   );
 
   // Current User's Group Contribution / My Paid: money actually paid by current user for shared expenses
-  const mySharedExpensesList = expenses.filter((e) => e.isShared && isPaidOrOwnedByCurrentUser(e));
+  const mySharedExpensesList = expenses.filter((e) => e.isShared && isUserExpense(e, user));
   const mySharedExpensesAmount = sumExactAmounts(
     mySharedExpensesList.map((exp) => exp.originalAmount ?? exp.amount)
   );

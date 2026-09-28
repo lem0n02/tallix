@@ -55,6 +55,7 @@ import {
   getAvailableMonthKeys,
   filterExpensesByMonth,
 } from './utils/monthFilter';
+import { isUserExpense } from './utils/pdfReportGenerator';
 
 export { parseLocationPath, getPathForTab };
 export type { AppRoute, RouteState };
@@ -493,12 +494,14 @@ export default function App() {
     if (!activeUser || !activeUser.id) return [];
     const cleanUserEmail = (activeUser.email || '').toLowerCase();
     const filtered = activeGroups.filter((g) =>
-      Array.isArray(g.members) &&
-      g.members.some(
-        (m) =>
-          isMemberMatch(m, activeUser.id, activeUser.name) ||
-          (m.email && m.email.toLowerCase() === cleanUserEmail)
-      )
+      g.createdBy === activeUser.id ||
+      (Array.isArray(g.members) &&
+        g.members.some(
+          (m) =>
+            isMemberMatch(m, activeUser.id, activeUser.name) ||
+            (m.email && m.email.toLowerCase() === cleanUserEmail) ||
+            m.id === activeUser.id
+        ))
     );
     return enrichGroupsWithBalances(filtered, activeExpenses, activeSettlements);
   }, [activeGroups, activeExpenses, activeSettlements, activeUser]);
@@ -510,40 +513,26 @@ export default function App() {
   // All authorized expenses for this user (including all squad expenses for squads they belong to)
   const userExpenses = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
-    const cleanUserEmail = (activeUser.email || '').toLowerCase();
-    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
     return activeExpenses.filter((e) => {
-      // Shared expense: only accessible if user is a member of that Squad
-      if (e.isShared && e.groupId) {
-        return userGroupIds.has(e.groupId);
+      // 1. Any expense paid or owned/created by the user is ALWAYS accessible
+      if (isUserExpense(e, activeUser)) {
+        return true;
       }
-      // Personal expense: owned / paid by user
-      return (
-        e.paidByUserId === activeUser.id ||
-        e.createdBy === activeUser.id ||
-        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail ||
-        isMemberMatch(userMember, e.paidByUserId, e.paidByName)
-      );
+      // 2. Shared expense in one of user's squads (even if paid by another squad member)
+      if (e.isShared && e.groupId && userGroupIds.has(e.groupId)) {
+        return true;
+      }
+      return false;
     });
   }, [activeExpenses, activeUser, userGroupIds]);
 
   // Dedicated Dashboard Query: Current user's personal transactions PLUS squad transactions
   // where the CURRENT USER is the payer / owner. Transactions paid by other members are excluded from Dashboard.
+  // Authoritative single shared source of truth matching the Monthly PDF inclusion pipeline.
   const dashboardExpenses = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
-    const cleanUserEmail = (activeUser.email || '').toLowerCase();
-    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
-
-    return userExpenses.filter((e) => {
-      const isPaidByMe = isMemberMatch(userMember, e.paidByUserId, e.paidByName);
-      const isOwnedByMe =
-        e.paidByUserId === activeUser.id ||
-        e.createdBy === activeUser.id ||
-        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail;
-
-      return isPaidByMe || isOwnedByMe;
-    });
-  }, [userExpenses, activeUser]);
+    return activeExpenses.filter((e) => isUserExpense(e, activeUser));
+  }, [activeExpenses, activeUser]);
 
   const userSettlements = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
