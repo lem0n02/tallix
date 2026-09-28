@@ -50,6 +50,7 @@ interface SharedGroupsViewProps {
   onOpenJoinGroup: () => void;
   onOpenNewTransaction: () => void;
   onOpenSettleUp?: (groupId?: string, direction?: 'UP' | 'DOWN') => void;
+  onOpenSettlement?: (groupId?: string) => void;
   onDeleteGroup?: (groupId: string) => void;
   onRemoveMember?: (groupId: string, memberId: string) => void;
   onDeleteExpense?: (expenseId: string) => void;
@@ -82,6 +83,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   onOpenJoinGroup,
   onOpenNewTransaction,
   onOpenSettleUp,
+  onOpenSettlement,
   onDeleteGroup,
   onRemoveMember,
   onDeleteExpense,
@@ -474,32 +476,27 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-              {onOpenSettleUp ? (
-                <button
-                  onClick={() => onOpenSettleUp(activeGroup.id, 'UP')}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
-                >
-                  <ArrowUpRight className="w-4 h-4" />
-                  <span>{t('settleUp')}</span>
-                </button>
-              ) : null}
-              {onOpenSettleUp ? (
-                <button
-                  onClick={() => onOpenSettleUp(activeGroup.id, 'DOWN')}
-                  className="bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-600/20 active:scale-[0.98]"
-                >
-                  <ArrowDownRight className="w-4 h-4" />
-                  <span>{t('settleDown') || 'Settle Down'}</span>
-                </button>
-              ) : null}
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-1 w-full">
               <button
                 onClick={onOpenNewTransaction}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/25 active:scale-[0.98]"
+                className="bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-semibold sm:font-bold text-xs sm:text-sm py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all shadow-md shadow-blue-600/25 cursor-pointer min-h-[42px]"
               >
-                <Plus className="w-4 h-4" />
-                <span>{t('addExpenseToSquad')}</span>
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                <span className="truncate">{t('addExpenseToSquad')}</span>
               </button>
+              {(onOpenSettlement || onOpenSettleUp) && (
+                <button
+                  onClick={() => {
+                    if (onOpenSettlement) onOpenSettlement(activeGroup.id);
+                    else if (onOpenSettleUp) onOpenSettleUp(activeGroup.id);
+                  }}
+                  className="bg-[#0c1220] sm:bg-[#18181b] hover:bg-[#131b2e] sm:hover:bg-[#27272a] border border-[#1e293b] sm:border-[#27272a] text-white sm:text-[#fafafa] font-semibold sm:font-bold text-xs sm:text-sm py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer active:scale-[0.98] shadow-sm min-h-[42px]"
+                  title="Open Settlement"
+                >
+                  <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#10b981] sm:text-emerald-400" />
+                  <span className="truncate">{t('settlement') || 'Settlement'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1056,23 +1053,18 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                       {formatNumber(groupSettlements.length)}
                     </span>
                   </div>
-                  {onOpenSettleUp && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onOpenSettleUp(activeGroup.id, 'UP')}
-                        className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                        <span>{t('settleUp')}</span>
-                      </button>
-                      <button
-                        onClick={() => onOpenSettleUp(activeGroup.id, 'DOWN')}
-                        className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <ArrowDownRight className="w-3.5 h-3.5" />
-                        <span>{t('settleDown') || 'Settle Down'}</span>
-                      </button>
-                    </div>
+                  {(onOpenSettlement || onOpenSettleUp) && (
+                    <button
+                      onClick={() => {
+                        if (onOpenSettlement) onOpenSettlement(activeGroup.id);
+                        else if (onOpenSettleUp) onOpenSettleUp(activeGroup.id);
+                      }}
+                      className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1 rounded-lg"
+                      title="Open Settlement"
+                    >
+                      <Scale className="w-3.5 h-3.5" />
+                      <span>{t('settlement') || 'Settlement'}</span>
+                    </button>
                   )}
                 </div>
 

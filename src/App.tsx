@@ -1802,6 +1802,11 @@ export default function App() {
                 setSettleDirection(dir || 'UP');
                 setIsSettleUpOpen(true);
               }}
+              onOpenSettlement={(grpId) => {
+                if (grpId) handleSelectGroup(grpId);
+                setSettleDirection('UP');
+                setIsSettleUpOpen(true);
+              }}
               onDeleteGroup={handleDeleteGroup}
               onRemoveMember={handleRemoveMember}
               onDeleteExpense={handleDeleteExpense}
@@ -1831,6 +1836,8 @@ export default function App() {
               onNavigate={navigate}
               isGuestSession={isGuestSession}
               onExitGuestMode={() => setIsExitGuestModalOpen(true)}
+              expenses={activeExpenses}
+              settlements={activeSettlements}
             />
           )}
 

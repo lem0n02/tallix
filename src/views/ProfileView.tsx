@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { User, Mail, DollarSign, Camera, Upload, Trash2, Lock, CheckCircle2, Shield, AlertCircle } from 'lucide-react';
-import { UserProfile, LanguageMode } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, Mail, DollarSign, Camera, Upload, Trash2, Lock, CheckCircle2, Shield, AlertCircle, FileText, Eye, Download, Calendar } from 'lucide-react';
+import { UserProfile, LanguageMode, Expense, Settlement } from '../types';
+import { getAvailableReportMonths, downloadMonthlyPdf } from '../utils/pdfReportGenerator';
+import { formatMonthDisplay } from '../utils/monthFilter';
+import { MonthlyReportModal } from '../components/MonthlyReportModal';
 
 interface ProfileViewProps {
   user: UserProfile;
@@ -9,6 +12,8 @@ interface ProfileViewProps {
   onNavigate?: (path: string) => void;
   onExitGuestMode?: () => void;
   isGuestSession?: boolean;
+  expenses?: Expense[];
+  settlements?: Settlement[];
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -16,12 +21,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSaveUser,
   onExitGuestMode,
   isGuestSession,
+  expenses = [],
+  settlements = [],
 }) => {
   const [avatarUrl, setAvatarUrl] = useState<string>(user.avatarUrl || '');
   const [monthlyBudget, setMonthlyBudget] = useState<number | string>(user.liquidityLimit ?? 25000);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [selectedReportMonth, setSelectedReportMonth] = useState<string | null>(null);
+
+  const availableMonths = useMemo(() => {
+    return getAvailableReportMonths(expenses, settlements);
+  }, [expenses, settlements]);
 
   useEffect(() => {
     setAvatarUrl(user.avatarUrl || '');
@@ -346,6 +358,79 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Section 6: MONTHLY REPORTS ARCHIVE (PART 8 & 9) */}
+      <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm mt-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#27272a] pb-3">
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>Monthly Reports</span>
+            </h3>
+            <p className="text-xs text-[#a1a1aa] mt-0.5">
+              Official monthly accounting statements preserved and reproducible offline.
+            </p>
+          </div>
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full w-fit">
+            {availableMonths.length} Statements Archived
+          </span>
+        </div>
+
+        <div className="space-y-2.5">
+          {availableMonths.map((mKey) => {
+            const display = formatMonthDisplay(mKey);
+            return (
+              <div
+                key={mKey}
+                className="bg-[#09090b] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Calendar className="w-4.5 h-4.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-[#fafafa]">{display}</h4>
+                    <p className="text-[10px] text-[#71717a] font-mono">Statement ID: TALLIX-{mKey.replace('-', '')}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReportMonth(mKey)}
+                    className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-[#3f3f46]"
+                    title="View PDF Statement"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-blue-400" />
+                    <span>View PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadMonthlyPdf(mKey, user, expenses, settlements)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-600/25 active:scale-95"
+                    title="Download PDF"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Monthly Report PDF Preview Modal */}
+      {selectedReportMonth && (
+        <MonthlyReportModal
+          isOpen={Boolean(selectedReportMonth)}
+          onClose={() => setSelectedReportMonth(null)}
+          monthKey={selectedReportMonth}
+          user={user}
+          expenses={expenses}
+          settlements={settlements}
+        />
+      )}
     </div>
   );
 };

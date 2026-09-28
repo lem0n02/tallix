@@ -211,4 +211,31 @@ describe('Tallix Squads Mobile Refinement & Balance Calculations', () => {
     const exploreMatches = html.match(/Explore &amp; Join \+/g) || [];
     expect(exploreMatches.length).toBe(1);
   });
+
+  it('Renders unified 2-button Quick Actions row with Add Expense and Settlement in squad view', () => {
+    const html = renderToString(
+      <LanguageProvider>
+        <SharedGroupsView
+          groups={[squad412, squadKhaddo]}
+          expenses={[expensePepsi120]}
+          allExpenses={[expensePepsi120]}
+          selectedGroupId="grp_412"
+          setSelectedGroupId={() => {}}
+          currentUser={userLemon}
+          onOpenNewGroup={() => {}}
+          onOpenJoinGroup={() => {}}
+          onOpenNewTransaction={() => {}}
+          onOpenSettleUp={() => {}}
+        />
+      </LanguageProvider>
+    );
+
+    // Verify 2-column side-by-side action bar
+    expect(html).toContain('grid grid-cols-2 gap-2 sm:gap-2.5 pt-1 w-full');
+    // Both buttons present
+    expect(html).toContain('Add Expense');
+    expect(html).toContain('Settlement');
+    // Does not have separate standalone Settle Up / Settle Down in Quick Actions
+    expect(html).not.toContain('grid-cols-1 sm:grid-cols-3');
+  });
 });
