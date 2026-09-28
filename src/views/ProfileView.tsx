@@ -4,10 +4,12 @@ import { UserProfile, LanguageMode, Expense, Settlement } from '../types';
 import { getAvailableReportMonths, downloadMonthlyPdf } from '../utils/pdfReportGenerator';
 import { formatMonthDisplay } from '../utils/monthFilter';
 import { MonthlyReportModal } from '../components/MonthlyReportModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface ProfileViewProps {
   user: UserProfile;
   onSaveUser: (updatedUser: UserProfile) => void | Promise<void>;
+  onDeleteAccount?: () => void | Promise<void>;
   lang?: LanguageMode;
   onNavigate?: (path: string) => void;
   onExitGuestMode?: () => void;
@@ -19,17 +21,21 @@ interface ProfileViewProps {
 export const ProfileView: React.FC<ProfileViewProps> = ({
   user,
   onSaveUser,
+  onDeleteAccount,
   onExitGuestMode,
   isGuestSession,
   expenses = [],
   settlements = [],
 }) => {
+  const { t } = useLanguage();
   const [avatarUrl, setAvatarUrl] = useState<string>(user.avatarUrl || '');
   const [monthlyBudget, setMonthlyBudget] = useState<number | string>(user.liquidityLimit ?? 25000);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [selectedReportMonth, setSelectedReportMonth] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const availableMonths = useMemo(() => {
     return getAvailableReportMonths(expenses, settlements);
@@ -419,6 +425,97 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Section 7: DANGER ZONE - ACCOUNT DELETION */}
+      {!user.isGuest && !isGuestSession && onDeleteAccount && (
+        <div className="bg-red-950/20 border border-red-500/30 rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm mt-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-red-500/20 pb-4">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-red-400 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-red-400" />
+                <span>{t('dangerZone')}</span>
+              </h3>
+              <p className="text-xs text-[#a1a1aa] mt-1 max-w-xl">
+                {t('deleteAccountWarning')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-95 shadow-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{t('deleteAccount')}</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-[#71717a]">
+            Account deletion will immediately release your email address so you or anyone else can freely register again from scratch.
+          </p>
+        </div>
+      )}
+
+      {/* Account Deletion Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#18181b] border border-red-500/40 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#fafafa]">{t('deleteAccount')}</h3>
+                <p className="text-xs text-red-300/80 font-mono">{user.email}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#d4d4d8] leading-relaxed">
+              {t('confirmDeleteAccount')}
+            </p>
+
+            <div className="p-3 bg-red-950/30 border border-red-500/20 rounded-xl text-[11px] text-red-300 space-y-1">
+              <p className="font-semibold">• All personal expenses and settlements will be permanently erased.</p>
+              <p className="font-semibold">• You will be removed from all squads and shared records.</p>
+              <p className="font-semibold">• Your email will be freed immediately for fresh registration.</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingAccount}
+                className="px-4 py-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-xs font-semibold transition-colors cursor-pointer"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingAccount}
+                onClick={async () => {
+                  if (onDeleteAccount) {
+                    setIsDeletingAccount(true);
+                    try {
+                      await onDeleteAccount();
+                    } finally {
+                      setIsDeletingAccount(false);
+                      setShowDeleteModal(false);
+                    }
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all cursor-pointer shadow-lg shadow-red-600/30 active:scale-95 disabled:opacity-50 flex items-center gap-2"
+              >
+                {isDeletingAccount ? (
+                  <span>Deleting...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Permanently Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Monthly Report PDF Preview Modal */}
       {selectedReportMonth && (

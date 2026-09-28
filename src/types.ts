@@ -65,6 +65,8 @@ export interface Group {
   totalSpent: number;
   unsettledAmount: number;
   createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
   inviteCode: string;
 }
 
@@ -86,6 +88,7 @@ export interface Settlement {
   paymentMethod?: 'Cash' | 'bKash' | 'Nagad' | 'Bank Transfer' | 'Other' | string;
   status: 'Pending' | 'Accepted' | 'Rejected' | 'Completed' | 'Pending Approval' | 'Cancelled';
   createdAt: string;
+  updatedAt?: string;
   proofUrl?: string;
   note?: string;
 }
@@ -102,6 +105,7 @@ export interface GuestVisit {
   os: string;
   deviceType: 'Desktop' | 'Mobile' | 'Tablet';
   visitTime: string;
+  visitedAt?: string;
 }
 
 export interface AuditLog {
@@ -109,6 +113,7 @@ export interface AuditLog {
   timestamp: string;
   level: 'INFO' | 'WARN' | 'ERROR';
   type?: 'LOGIN' | 'LOGOUT' | 'ACTIVITY' | 'GUEST_VISIT';
+  userId?: string;
   userEmail?: string;
   ip?: string;
   message: string;

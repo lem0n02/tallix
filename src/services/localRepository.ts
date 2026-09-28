@@ -10,7 +10,7 @@ import {
   idbGetMetadata,
   idbSetMetadata,
 } from './indexedDB';
-import { enqueueMutation } from './syncQueue';
+import { enqueueMutation, purgeUserMutations, purgeGroupMutations } from './syncQueue';
 import { syncEngine } from './syncEngine';
 import { Expense, Group, Settlement, RegisteredUser, AuditLog, GuestVisit } from '../types';
 import { toPaisa, parseExactMoney } from '../utils/money';
@@ -227,8 +227,37 @@ export class LocalRepository {
   }
 
   public static async deleteGroup(id: string, userId: string): Promise<void> {
+    // 1. Permanently delete squad record from local database
     await idbDelete(STORES.GROUPS, id);
 
+    // 2. Cascade delete all expenses belonging exclusively to this squad
+    const allExpenses = await idbGetAll<Expense>(STORES.EXPENSES);
+    for (const exp of allExpenses) {
+      if (exp.groupId === id) {
+        await idbDelete(STORES.EXPENSES, exp.id);
+      }
+    }
+
+    // 3. Cascade delete all settlements belonging exclusively to this squad
+    const allSettlements = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    for (const stl of allSettlements) {
+      if (stl.groupId === id) {
+        await idbDelete(STORES.SETTLEMENTS, stl.id);
+      }
+    }
+
+    // 4. Purge all audit logs referencing this squad
+    const allLogs = await idbGetAll<AuditLog>(STORES.AUDIT_LOGS);
+    for (const log of allLogs) {
+      if (log.message?.includes(id)) {
+        await idbDelete(STORES.AUDIT_LOGS, log.id);
+      }
+    }
+
+    // 5. Purge all pending sync mutations for this squad to prevent resurrection
+    await purgeGroupMutations(id);
+
+    // 6. Enqueue DELETE mutation so remote Cloudflare D1/server permanently purges squad
     await enqueueMutation({
       entityType: 'group',
       entityId: id,
@@ -368,15 +397,114 @@ export class LocalRepository {
     syncEngine.triggerSync().catch(console.warn);
   }
 
-  public static async deleteRegisteredUser(userId: string): Promise<void> {
+  public static async deleteRegisteredUser(userId: string, emailCandidate?: string): Promise<void> {
+    // 1. Resolve user details to obtain normalized email
+    const existing = await idbGet<RegisteredUser>(STORES.USERS, userId);
+    const allUsers = await idbGetAll<RegisteredUser>(STORES.USERS);
+    const userRow = existing || allUsers.find(
+      (u) => u.id === userId || (emailCandidate && u.email?.toLowerCase() === emailCandidate.toLowerCase())
+    );
+    const cleanEmail = (emailCandidate || userRow?.email || '').trim().toLowerCase();
+
+    // 2. Permanently delete from registeredUsers store by ID and any matching email
     await idbDelete(STORES.USERS, userId);
+    for (const u of allUsers) {
+      if (u.id === userId || (cleanEmail && u.email?.toLowerCase() === cleanEmail)) {
+        await idbDelete(STORES.USERS, u.id);
+      }
+    }
+
+    // 3. Cascade purge all user-owned/created expenses and personal expenses paid by user
+    const allExpenses = await idbGetAll<Expense>(STORES.EXPENSES);
+    for (const exp of allExpenses) {
+      const isUserExpense =
+        exp.paidByUserId === userId ||
+        exp.createdBy === userId ||
+        (cleanEmail && (exp as any).createdByEmail?.toLowerCase() === cleanEmail);
+
+      if (isUserExpense) {
+        await idbDelete(STORES.EXPENSES, exp.id);
+      } else if (exp.splits && Array.isArray(exp.splits)) {
+        // Shared expense paid by someone else: remove deleted user from split participants
+        const hasUserInSplits = exp.splits.some(
+          (s) => s.userId === userId || (cleanEmail && (s as any).userEmail?.toLowerCase() === cleanEmail)
+        );
+        if (hasUserInSplits) {
+          const updatedSplits = exp.splits.filter(
+            (s) => s.userId !== userId && (!cleanEmail || (s as any).userEmail?.toLowerCase() !== cleanEmail)
+          );
+          if (updatedSplits.length === 0) {
+            await idbDelete(STORES.EXPENSES, exp.id);
+          } else {
+            await idbPut(STORES.EXPENSES, { ...exp, splits: updatedSplits });
+          }
+        }
+      }
+    }
+
+    // 4. Cascade purge all settlements involving this user (fromUserId or toUserId)
+    const allSettlements = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    for (const stl of allSettlements) {
+      if (stl.fromUserId === userId || stl.toUserId === userId) {
+        await idbDelete(STORES.SETTLEMENTS, stl.id);
+      }
+    }
+
+    // 5. Update squad memberships: remove user; if squad was created by user and has no other members, delete the squad entirely
+    const allGroups = await idbGetAll<Group>(STORES.GROUPS);
+    for (const grp of allGroups) {
+      if (Array.isArray(grp.members)) {
+        const remainingMembers = grp.members.filter(
+          (m) => m.id !== userId && (!cleanEmail || m.email?.toLowerCase() !== cleanEmail)
+        );
+        const wasCreatedByUser = grp.createdBy === userId;
+        if (remainingMembers.length === 0 || (wasCreatedByUser && remainingMembers.length === 0)) {
+          await idbDelete(STORES.GROUPS, grp.id);
+          for (const exp of allExpenses) {
+            if (exp.groupId === grp.id) await idbDelete(STORES.EXPENSES, exp.id);
+          }
+          for (const stl of allSettlements) {
+            if (stl.groupId === grp.id) await idbDelete(STORES.SETTLEMENTS, stl.id);
+          }
+        } else if (remainingMembers.length !== grp.members.length) {
+          await idbPut(STORES.GROUPS, { ...grp, members: remainingMembers });
+        }
+      }
+    }
+
+    // 6. Purge all audit logs referencing this user (userId or email)
+    const allLogs = await idbGetAll<AuditLog>(STORES.AUDIT_LOGS);
+    for (const log of allLogs) {
+      const matchUserId = log.userId === userId || log.message?.includes(userId);
+      const matchEmail = cleanEmail && log.message?.toLowerCase().includes(cleanEmail);
+      if (matchUserId || matchEmail) {
+        await idbDelete(STORES.AUDIT_LOGS, log.id);
+      }
+    }
+
+    // 7. Purge guest visits matching user email
+    if (cleanEmail) {
+      const allVisits = await idbGetAll<GuestVisit>(STORES.GUEST_VISITS);
+      for (const v of allVisits) {
+        if (v.email?.toLowerCase() === cleanEmail) {
+          await idbDelete(STORES.GUEST_VISITS, v.id);
+        }
+      }
+    }
+
+    // 8. Purge all pending sync mutations for this user
+    await purgeUserMutations(userId, cleanEmail);
+
+    // 9. Enqueue DELETE mutation so remote Cloudflare D1/server permanently purges user and email
     await enqueueMutation({
       entityType: 'registeredUser',
       entityId: userId,
       operation: 'DELETE',
-      payload: { id: userId },
+      payload: { id: userId, email: cleanEmail },
       userId,
     });
+
+    await syncEngine.updatePendingCount();
     syncEngine.triggerSync().catch(console.warn);
   }
 

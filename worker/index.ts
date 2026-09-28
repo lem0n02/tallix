@@ -578,6 +578,99 @@ export default {
         }
       }
 
+      // User Self-Deletion Endpoint: DELETE /api/auth/account
+      if (url.pathname === '/api/auth/account' && request.method === 'DELETE') {
+        try {
+          const authHeader = request.headers.get('Authorization') || '';
+          const headerUserId = (request.headers.get('X-User-Id') || '').trim();
+          const headerEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
+
+          let body: any = {};
+          try { body = await request.json(); } catch {}
+          let targetUserId = headerUserId || body.userId || '';
+          let targetEmail = headerEmail || (body.email || '').trim().toLowerCase();
+
+          if (!targetUserId && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7).trim();
+            if (token.startsWith('usr_')) targetUserId = token;
+          }
+
+          if (!targetUserId && !targetEmail) {
+            return jsonResponse({ success: false, error: 'Unauthorized: User identifier required.' }, 401);
+          }
+
+          const now = new Date().toISOString();
+          const userRow: any = await env.DB.prepare('SELECT id, email FROM users WHERE id = ? OR LOWER(email) = ?').bind(targetUserId, targetEmail).first();
+          const userId = targetUserId || userRow?.id;
+          const cleanEmail = targetEmail || (userRow?.email || '').trim().toLowerCase();
+
+          if (userId || cleanEmail) {
+            await env.DB.prepare('DELETE FROM users WHERE id = ? OR LOWER(email) = ?').bind(userId || '', cleanEmail).run();
+            await env.DB.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE paid_by_user_id = ? OR created_by = ? OR (LOWER(created_by_email) = ? AND ? != "")').bind(now, now, userId || '', userId || '', cleanEmail, cleanEmail).run();
+            await env.DB.prepare('UPDATE settlements SET deleted_at = ?, updated_at = ? WHERE from_user_id = ? OR to_user_id = ?').bind(now, now, userId || '', userId || '').run();
+            try {
+              await env.DB.prepare('DELETE FROM audit_logs WHERE user_id = ? OR message LIKE ? OR (LOWER(message) LIKE ? AND ? != "")').bind(userId || '', `%${userId}%`, `%${cleanEmail}%`, cleanEmail).run();
+            } catch {}
+            if (cleanEmail) {
+              try { await env.DB.prepare('DELETE FROM guest_visits WHERE LOWER(email) = ?').bind(cleanEmail).run(); } catch {}
+            }
+            if (userId) {
+              try {
+                await env.DB.prepare('CREATE TABLE IF NOT EXISTS deleted_entities (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, deleted_at TEXT NOT NULL)').run();
+                await env.DB.prepare('INSERT OR REPLACE INTO deleted_entities (id, entity_type, entity_id, deleted_at) VALUES (?, "user", ?, ?)').bind(`del_usr_${userId}_${Date.now()}`, userId, now).run();
+              } catch {}
+            }
+          }
+
+          return jsonResponse({ success: true, message: 'Account permanently purged.' });
+        } catch (err: any) {
+          return jsonResponse({ success: false, error: err?.message || 'Failed to delete account.' }, 500);
+        }
+      }
+
+      // Admin Delete User Endpoint: DELETE /api/admin/users/:id
+      if (url.pathname.startsWith('/api/admin/users/') && request.method === 'DELETE') {
+        try {
+          const authHeader = request.headers.get('Authorization') || '';
+          const adminEmail = (request.headers.get('X-Admin-Email') || '').trim().toLowerCase();
+          const isFixedAdmin =
+            authHeader === 'Bearer Admin@Tallix2026!' ||
+            authHeader.includes('Admin@Tallix2026!') ||
+            (adminEmail === 'abdulatiflemon@gmail.com' && authHeader.length > 5);
+
+          if (!isFixedAdmin) {
+            return jsonResponse({ success: false, error: 'Unauthorized: Administrative credentials required.' }, 401);
+          }
+
+          const targetUserId = decodeURIComponent(url.pathname.replace('/api/admin/users/', ''));
+          let body: any = {};
+          try { body = await request.json(); } catch {}
+          const targetEmail = (body.email || '').trim().toLowerCase();
+
+          const now = new Date().toISOString();
+          const userRow: any = await env.DB.prepare('SELECT id, email FROM users WHERE id = ?').bind(targetUserId).first();
+          const cleanEmail = targetEmail || (userRow?.email || '').trim().toLowerCase();
+
+          await env.DB.prepare('DELETE FROM users WHERE id = ? OR LOWER(email) = ?').bind(targetUserId, cleanEmail).run();
+          await env.DB.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE paid_by_user_id = ? OR created_by = ? OR (LOWER(created_by_email) = ? AND ? != "")').bind(now, now, targetUserId, targetUserId, cleanEmail, cleanEmail).run();
+          await env.DB.prepare('UPDATE settlements SET deleted_at = ?, updated_at = ? WHERE from_user_id = ? OR to_user_id = ?').bind(now, now, targetUserId, targetUserId).run();
+          try {
+            await env.DB.prepare('DELETE FROM audit_logs WHERE user_id = ? OR message LIKE ? OR (LOWER(message) LIKE ? AND ? != "")').bind(targetUserId, `%${targetUserId}%`, `%${cleanEmail}%`, cleanEmail).run();
+          } catch {}
+          if (cleanEmail) {
+            try { await env.DB.prepare('DELETE FROM guest_visits WHERE LOWER(email) = ?').bind(cleanEmail).run(); } catch {}
+          }
+          try {
+            await env.DB.prepare('CREATE TABLE IF NOT EXISTS deleted_entities (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, deleted_at TEXT NOT NULL)').run();
+            await env.DB.prepare('INSERT OR REPLACE INTO deleted_entities (id, entity_type, entity_id, deleted_at) VALUES (?, "user", ?, ?)').bind(`del_usr_${targetUserId}_${Date.now()}`, targetUserId, now).run();
+          } catch {}
+
+          return jsonResponse({ success: true, message: 'User permanently purged.' });
+        } catch (err: any) {
+          return jsonResponse({ success: false, error: err?.message || 'Failed to delete user.' }, 500);
+        }
+      }
+
       // 4. Admin Users Endpoint: GET /api/admin/users
       // Authoritative retrieval of registered users from Cloudflare D1
       // Excludes password, password_hash, and sensitive secrets
@@ -805,9 +898,21 @@ export default {
                   )
                   .run();
               } else if (mut.operation === 'DELETE') {
+                const grpId = mut.entityId;
                 await env.DB.prepare('UPDATE groups SET deleted_at = ?, updated_at = ? WHERE id = ?')
-                  .bind(now, now, mut.entityId)
+                  .bind(now, now, grpId)
                   .run();
+                await env.DB.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE group_id = ?')
+                  .bind(now, now, grpId)
+                  .run();
+                await env.DB.prepare('UPDATE settlements SET deleted_at = ?, updated_at = ? WHERE group_id = ?')
+                  .bind(now, now, grpId)
+                  .run();
+                try {
+                  await env.DB.prepare('DELETE FROM audit_logs WHERE message LIKE ?')
+                    .bind(`%${grpId}%`)
+                    .run();
+                } catch {}
               }
             } else if (mut.entityType === 'settlement') {
               const stl = mut.payload;
@@ -967,9 +1072,66 @@ export default {
                     .run();
                 }
               } else if (mut.operation === 'DELETE') {
-                await env.DB.prepare('DELETE FROM users WHERE id = ?')
-                  .bind(mut.entityId)
+                const userId = mut.entityId;
+                const userRow: any = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(userId).first();
+                const cleanEmail = (mut.payload?.email || userRow?.email || '').trim().toLowerCase();
+
+                // 1. Permanently delete user from users table (freeing up the email address)
+                await env.DB.prepare('DELETE FROM users WHERE id = ? OR LOWER(email) = ?')
+                  .bind(userId, cleanEmail)
                   .run();
+
+                // 2. Cascade mark deleted or remove user's expenses
+                await env.DB.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE paid_by_user_id = ? OR created_by = ? OR (LOWER(created_by_email) = ? AND ? != "")')
+                  .bind(now, now, userId, userId, cleanEmail, cleanEmail)
+                  .run();
+
+                // 3. Cascade mark deleted or remove user's settlements
+                await env.DB.prepare('UPDATE settlements SET deleted_at = ?, updated_at = ? WHERE from_user_id = ? OR to_user_id = ?')
+                  .bind(now, now, userId, userId)
+                  .run();
+
+                // 4. Update squads: remove user from membership
+                try {
+                  const grpsRes = await env.DB.prepare('SELECT id, members_json FROM groups WHERE deleted_at IS NULL').all();
+                  for (const grp of ((grpsRes.results || []) as any[])) {
+                    const members = grp.members_json ? JSON.parse(grp.members_json) : [];
+                    const remaining = members.filter((m: any) => m.id !== userId && (!cleanEmail || (m.email || '').toLowerCase() !== cleanEmail));
+                    if (remaining.length === 0) {
+                      await env.DB.prepare('UPDATE groups SET deleted_at = ?, updated_at = ? WHERE id = ?')
+                        .bind(now, now, grp.id)
+                        .run();
+                    } else if (remaining.length !== members.length) {
+                      await env.DB.prepare('UPDATE groups SET members_json = ?, updated_at = ? WHERE id = ?')
+                        .bind(JSON.stringify(remaining), now, grp.id)
+                        .run();
+                    }
+                  }
+                } catch {}
+
+                // 5. Purge audit logs referencing this user (Requirement 7: zero trace of deleted user)
+                try {
+                  await env.DB.prepare('DELETE FROM audit_logs WHERE user_id = ? OR message LIKE ? OR (LOWER(message) LIKE ? AND ? != "")')
+                    .bind(userId, `%${userId}%`, `%${cleanEmail}%`, cleanEmail)
+                    .run();
+                } catch {}
+
+                // 6. Purge guest visits matching user email
+                if (cleanEmail) {
+                  try {
+                    await env.DB.prepare('DELETE FROM guest_visits WHERE LOWER(email) = ?')
+                      .bind(cleanEmail)
+                      .run();
+                  } catch {}
+                }
+
+                // 7. Track in deleted_entities for sync pull
+                try {
+                  await env.DB.prepare('CREATE TABLE IF NOT EXISTS deleted_entities (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, deleted_at TEXT NOT NULL)').run();
+                  await env.DB.prepare('INSERT OR REPLACE INTO deleted_entities (id, entity_type, entity_id, deleted_at) VALUES (?, "user", ?, ?)')
+                    .bind(`del_usr_${userId}_${Date.now()}`, userId, now)
+                    .run();
+                } catch {}
               }
             }
 
@@ -1131,6 +1293,16 @@ export default {
           updatedAt: row.updated_at,
         }));
 
+        let deletedUserIds: string[] = [];
+        try {
+          await env.DB.prepare('CREATE TABLE IF NOT EXISTS deleted_entities (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, deleted_at TEXT NOT NULL)').run();
+          const delUsersStmt = since
+            ? env.DB.prepare('SELECT entity_id FROM deleted_entities WHERE entity_type = "user" AND deleted_at >= ?').bind(since)
+            : env.DB.prepare('SELECT entity_id FROM deleted_entities WHERE entity_type = "user"');
+          const delUsersRes = await delUsersStmt.all();
+          deletedUserIds = (delUsersRes.results || []).map((r: any) => r.entity_id);
+        } catch {}
+
         return jsonResponse({
           success: true,
           serverTimestamp: now,
@@ -1141,6 +1313,7 @@ export default {
           deletedExpenseIds,
           deletedGroupIds,
           deletedSettlementIds,
+          deletedUserIds,
         });
       }
 

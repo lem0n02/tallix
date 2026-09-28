@@ -54,4 +54,5 @@ export interface SyncPullResponse {
   deletedExpenseIds?: string[];
   deletedGroupIds?: string[];
   deletedSettlementIds?: string[];
+  deletedUserIds?: string[];
 }

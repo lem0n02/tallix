@@ -147,3 +147,46 @@ export async function resetStuckSyncingMutations(): Promise<void> {
     }
   }
 }
+
+/**
+ * Permanently purges all pending and syncing mutations associated with a deleted user.
+ * Ensures deleted user entities are never pushed to the server or resurrected.
+ */
+export async function purgeUserMutations(userId: string, email?: string): Promise<void> {
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+  const all = await idbGetAll<SyncMutation>(STORES.SYNC_QUEUE);
+  for (const m of all) {
+    const isUserMutation =
+      m.userId === userId ||
+      m.entityId === userId ||
+      m.payload?.id === userId ||
+      (cleanEmail && m.payload?.email?.toLowerCase() === cleanEmail) ||
+      m.payload?.createdBy === userId ||
+      m.payload?.paidByUserId === userId ||
+      m.payload?.fromUserId === userId ||
+      m.payload?.toUserId === userId;
+
+    if (isUserMutation) {
+      await idbDelete(STORES.SYNC_QUEUE, m.mutationId);
+    }
+  }
+}
+
+/**
+ * Permanently purges all pending and syncing mutations associated with a deleted squad/group.
+ * Ensures deleted squad records and expenses/settlements are never pushed or resurrected.
+ */
+export async function purgeGroupMutations(groupId: string): Promise<void> {
+  const all = await idbGetAll<SyncMutation>(STORES.SYNC_QUEUE);
+  for (const m of all) {
+    const isGroupMutation =
+      m.groupId === groupId ||
+      m.entityId === groupId ||
+      m.payload?.groupId === groupId ||
+      m.payload?.id === groupId;
+
+    if (isGroupMutation) {
+      await idbDelete(STORES.SYNC_QUEUE, m.mutationId);
+    }
+  }
+}

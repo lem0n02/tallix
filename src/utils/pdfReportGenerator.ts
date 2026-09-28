@@ -37,19 +37,14 @@ export interface MonthlyReportData {
  * Single shared source of truth for user expense ownership across Dashboard and PDF.
  */
 export function isUserExpense(exp: Expense, user: { id: string; name: string; email?: string }): boolean {
-  if (!exp || !user) return false;
   const cleanUserEmail = (user.email || '').toLowerCase();
   const userMember = { id: user.id, name: user.name, email: user.email };
-  if (isMemberMatch(userMember, exp.paidByUserId, exp.paidByName)) return true;
-  if (exp.paidByUserId && user.id && exp.paidByUserId === user.id) return true;
-  if (exp.createdBy && user.id && exp.createdBy === user.id) return true;
-  if (exp.createdByEmail && cleanUserEmail && (exp as any).createdByEmail.toLowerCase() === cleanUserEmail) return true;
-  if (exp.paidByName && user.name) {
-    const cleanExpName = exp.paidByName.toLowerCase().replace(/\(you\)/gi, '').trim();
-    const cleanUserName = user.name.toLowerCase().replace(/\(you\)/gi, '').trim();
-    if (cleanExpName === cleanUserName && cleanUserName.length > 0) return true;
-  }
-  return false;
+  return (
+    isMemberMatch(userMember, exp.paidByUserId, exp.paidByName) ||
+    exp.paidByUserId === user.id ||
+    exp.createdBy === user.id ||
+    (exp as any).createdByEmail?.toLowerCase() === cleanUserEmail
+  );
 }
 
 /**

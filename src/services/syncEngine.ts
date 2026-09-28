@@ -536,6 +536,13 @@ export class SyncEngine {
           }
         }
 
+        if (pullData.deletedUserIds && pullData.deletedUserIds.length > 0) {
+          for (const id of pullData.deletedUserIds) {
+            await idbDelete(STORES.USERS, id);
+            hasLocalUpdates = true;
+          }
+        }
+
         // Save new sync checkpoint isolated per user
         if (pullData.serverTimestamp) {
           await idbSetMetadata(syncMetaKey, pullData.serverTimestamp);

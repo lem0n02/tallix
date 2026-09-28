@@ -99,15 +99,16 @@ export async function registerUserToCloudflareD1(input: RegisterUserInput): Prom
     }
 
     // Success in Cloudflare D1!
-    // Cache the registered user in local IndexedDB so the session and local features have immediate access
-    await idbPut(STORES.USERS, userRecord);
+    // Cache the authoritative registered user in local IndexedDB
+    const authoritativeUser: RegisteredUser = {
+      ...userRecord,
+      ...(data.user || {}),
+    };
+    await idbPut(STORES.USERS, authoritativeUser);
 
     return {
       success: true,
-      user: {
-        ...userRecord,
-        ...(data.user || {}),
-      },
+      user: authoritativeUser,
       isOffline: false,
     };
   } catch (err: any) {
@@ -552,6 +553,71 @@ export async function verifyD1UserDatabase(): Promise<{ totalUsers: number; sour
     source: 'Local IndexedDB Cache (offline)',
     timestamp: new Date().toISOString(),
   };
+}
+
+/**
+ * Permanently deletes a user's account and all associated data.
+ * Authoritative against Cloudflare D1/Server API with offline-first cascade purge.
+ * Completely frees up the user's email address for immediate re-registration.
+ */
+export async function deleteUserAccount(userId: string, email?: string): Promise<{ success: boolean; message?: string }> {
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+  const endpointUrl = buildApiUrl('/api/auth/account');
+
+  try {
+    const response = await fetch(endpointUrl, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userId}`,
+        'X-User-Id': userId,
+        ...(cleanEmail ? { 'X-User-Email': cleanEmail } : {}),
+      },
+      body: JSON.stringify({ userId, email: cleanEmail }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[AuthService] Remote account deletion returned ${response.status}`);
+    }
+  } catch (err) {
+    console.warn('[AuthService] Network error during remote account deletion; continuing with local cascade purge:', err);
+  }
+
+  // Always perform local cascade purge in IndexedDB & enqueue DELETE mutation for background sync
+  await LocalRepository.deleteRegisteredUser(userId, cleanEmail);
+
+  return { success: true, message: 'Account permanently deleted.' };
+}
+
+/**
+ * Admin action to permanently delete any user account from Cloudflare D1 and local registry.
+ */
+export async function adminDeleteUser(userId: string, email?: string): Promise<{ success: boolean; message?: string }> {
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+  const endpointUrl = buildApiUrl(`/api/admin/users/${encodeURIComponent(userId)}`);
+  const headers = getAdminAuthHeaders();
+
+  try {
+    const response = await fetch(endpointUrl, {
+      method: 'DELETE',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId, email: cleanEmail }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[AuthService] Remote admin delete returned ${response.status}`);
+    }
+  } catch (err) {
+    console.warn('[AuthService] Network error during remote admin delete; continuing with local cascade purge:', err);
+  }
+
+  // Always perform local cascade purge in IndexedDB & enqueue DELETE mutation
+  await LocalRepository.deleteRegisteredUser(userId, cleanEmail);
+
+  return { success: true, message: 'User permanently deleted.' };
 }
 
 

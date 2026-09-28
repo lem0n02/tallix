@@ -48,14 +48,13 @@ import {
 import { LocalRepository } from './services/localRepository';
 import { generateEntityId } from './services/idGenerator';
 import { syncEngine } from './services/syncEngine';
-import { updateUserProfile, fetchUserProfileFromD1 } from './services/authService';
+import { updateUserProfile, fetchUserProfileFromD1, adminDeleteUser, deleteUserAccount } from './services/authService';
 import { toPaisa, parseExactMoney, splitExactAmount } from './utils/money';
 import {
   getCurrentMonthKey,
   getAvailableMonthKeys,
   filterExpensesByMonth,
 } from './utils/monthFilter';
-import { isUserExpense } from './utils/pdfReportGenerator';
 
 export { parseLocationPath, getPathForTab };
 export type { AppRoute, RouteState };
@@ -494,14 +493,12 @@ export default function App() {
     if (!activeUser || !activeUser.id) return [];
     const cleanUserEmail = (activeUser.email || '').toLowerCase();
     const filtered = activeGroups.filter((g) =>
-      g.createdBy === activeUser.id ||
-      (Array.isArray(g.members) &&
-        g.members.some(
-          (m) =>
-            isMemberMatch(m, activeUser.id, activeUser.name) ||
-            (m.email && m.email.toLowerCase() === cleanUserEmail) ||
-            m.id === activeUser.id
-        ))
+      Array.isArray(g.members) &&
+      g.members.some(
+        (m) =>
+          isMemberMatch(m, activeUser.id, activeUser.name) ||
+          (m.email && m.email.toLowerCase() === cleanUserEmail)
+      )
     );
     return enrichGroupsWithBalances(filtered, activeExpenses, activeSettlements);
   }, [activeGroups, activeExpenses, activeSettlements, activeUser]);
@@ -513,26 +510,40 @@ export default function App() {
   // All authorized expenses for this user (including all squad expenses for squads they belong to)
   const userExpenses = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
+    const cleanUserEmail = (activeUser.email || '').toLowerCase();
+    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
     return activeExpenses.filter((e) => {
-      // 1. Any expense paid or owned/created by the user is ALWAYS accessible
-      if (isUserExpense(e, activeUser)) {
-        return true;
+      // Shared expense: only accessible if user is a member of that Squad
+      if (e.isShared && e.groupId) {
+        return userGroupIds.has(e.groupId);
       }
-      // 2. Shared expense in one of user's squads (even if paid by another squad member)
-      if (e.isShared && e.groupId && userGroupIds.has(e.groupId)) {
-        return true;
-      }
-      return false;
+      // Personal expense: owned / paid by user
+      return (
+        e.paidByUserId === activeUser.id ||
+        e.createdBy === activeUser.id ||
+        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail ||
+        isMemberMatch(userMember, e.paidByUserId, e.paidByName)
+      );
     });
   }, [activeExpenses, activeUser, userGroupIds]);
 
   // Dedicated Dashboard Query: Current user's personal transactions PLUS squad transactions
   // where the CURRENT USER is the payer / owner. Transactions paid by other members are excluded from Dashboard.
-  // Authoritative single shared source of truth matching the Monthly PDF inclusion pipeline.
   const dashboardExpenses = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
-    return activeExpenses.filter((e) => isUserExpense(e, activeUser));
-  }, [activeExpenses, activeUser]);
+    const cleanUserEmail = (activeUser.email || '').toLowerCase();
+    const userMember = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+
+    return userExpenses.filter((e) => {
+      const isPaidByMe = isMemberMatch(userMember, e.paidByUserId, e.paidByName);
+      const isOwnedByMe =
+        e.paidByUserId === activeUser.id ||
+        e.createdBy === activeUser.id ||
+        (e as any).createdByEmail?.toLowerCase() === cleanUserEmail;
+
+      return isPaidByMe || isOwnedByMe;
+    });
+  }, [userExpenses, activeUser]);
 
   const userSettlements = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
@@ -705,19 +716,124 @@ export default function App() {
     ]);
   };
 
-  const handleDeleteUser = (userIdToDelete: string) => {
-    setRegisteredUsers((prev) => prev.filter((u) => u.id !== userIdToDelete));
-    LocalRepository.deleteRegisteredUser(userIdToDelete);
-    setAuditLogs((prev) => [
-      {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        level: 'WARN',
-        message: `User account deleted by admin: ID ${userIdToDelete}`,
-        source: 'admin-controller',
-      },
-      ...prev,
-    ]);
+  const handleDeleteUser = async (userIdToDelete: string) => {
+    const target = registeredUsers.find((u) => u.id === userIdToDelete);
+    const cleanEmail = (target?.email || '').trim().toLowerCase();
+
+    // 1. Remove user from registeredUsers state
+    setRegisteredUsers((prev) =>
+      prev.filter((u) => u.id !== userIdToDelete && (!cleanEmail || u.email.toLowerCase() !== cleanEmail))
+    );
+
+    // 2. Cascade remove all user's expenses (owned/paid/created)
+    setExpenses((prev) =>
+      prev.filter((e) => {
+        const isUserExpense =
+          e.paidByUserId === userIdToDelete ||
+          e.createdBy === userIdToDelete ||
+          (cleanEmail && (e as any).createdByEmail?.toLowerCase() === cleanEmail);
+        return !isUserExpense;
+      })
+    );
+
+    // 3. Cascade remove all user's settlements
+    setSettlements((prev) =>
+      prev.filter((s) => s.fromUserId !== userIdToDelete && s.toUserId !== userIdToDelete)
+    );
+
+    // 4. Update groups: remove user from members; remove empty squads
+    setGroups((prev) =>
+      prev
+        .map((g) => ({
+          ...g,
+          members: Array.isArray(g.members)
+            ? g.members.filter((m) => m.id !== userIdToDelete && (!cleanEmail || m.email?.toLowerCase() !== cleanEmail))
+            : [],
+        }))
+        .filter((g) => g.members.length > 0)
+    );
+
+    // 5. Purge all audit logs referencing this user (Requirement 7: zero residual logs containing deleted user info)
+    setAuditLogs((prev) =>
+      prev.filter(
+        (log) =>
+          log.userId !== userIdToDelete &&
+          !log.message.includes(userIdToDelete) &&
+          (!cleanEmail || !log.message.toLowerCase().includes(cleanEmail))
+      )
+    );
+
+    // 6. Purge guest visits matching user email
+    if (cleanEmail) {
+      setGuestVisits((prev) => prev.filter((v) => v.email.toLowerCase() !== cleanEmail));
+    }
+
+    // 7. Invoke LocalRepository cascade purge
+    await LocalRepository.deleteRegisteredUser(userIdToDelete, cleanEmail);
+
+    // 8. Attempt remote deletion via Admin API
+    adminDeleteUser(userIdToDelete, cleanEmail).catch(console.warn);
+  };
+
+  const handleDeleteMyAccount = async () => {
+    if (!activeUser || !activeUser.id) return;
+    const userIdToDelete = activeUser.id;
+    const cleanEmail = (activeUser.email || '').trim().toLowerCase();
+
+    // 1. Invoke comprehensive local cascade purge in LocalRepository & enqueue DELETE mutation
+    await LocalRepository.deleteRegisteredUser(userIdToDelete, cleanEmail);
+
+    // 2. Attempt remote deletion
+    deleteUserAccount(userIdToDelete, cleanEmail).catch(console.warn);
+
+    // 3. Clear local state
+    setRegisteredUsers((prev) =>
+      prev.filter((u) => u.id !== userIdToDelete && (!cleanEmail || u.email.toLowerCase() !== cleanEmail))
+    );
+    setExpenses((prev) =>
+      prev.filter((e) => {
+        const isUserExpense =
+          e.paidByUserId === userIdToDelete ||
+          e.createdBy === userIdToDelete ||
+          (cleanEmail && (e as any).createdByEmail?.toLowerCase() === cleanEmail);
+        return !isUserExpense;
+      })
+    );
+    setSettlements((prev) =>
+      prev.filter((s) => s.fromUserId !== userIdToDelete && s.toUserId !== userIdToDelete)
+    );
+    setGroups((prev) =>
+      prev
+        .map((g) => ({
+          ...g,
+          members: Array.isArray(g.members)
+            ? g.members.filter((m) => m.id !== userIdToDelete && (!cleanEmail || m.email?.toLowerCase() !== cleanEmail))
+            : [],
+        }))
+        .filter((g) => g.members.length > 0)
+    );
+    setAuditLogs((prev) =>
+      prev.filter(
+        (log) =>
+          log.userId !== userIdToDelete &&
+          !log.message.includes(userIdToDelete) &&
+          (!cleanEmail || !log.message.toLowerCase().includes(cleanEmail))
+      )
+    );
+    if (cleanEmail) {
+      setGuestVisits((prev) => prev.filter((v) => v.email.toLowerCase() !== cleanEmail));
+    }
+
+    // 4. Wipe session and cached authentication
+    localStorage.removeItem('tallix_auth');
+    localStorage.removeItem('tallix_user');
+    sessionStorage.removeItem('tallix_intended_destination');
+    sessionStorage.removeItem('tallix_selected_month');
+
+    // 5. Reset authentication state and redirect to landing
+    setIsAuthenticated(false);
+    setUser(INITIAL_USER);
+    navigate('/');
   };
 
   const handleToggleUserStatus = (userId: string) => {
@@ -1321,6 +1437,8 @@ export default function App() {
   const handleDeleteGroup = (groupId: string) => {
     if (isGuestSession) {
       setGuestGroups((prev) => prev.filter((g) => g.id !== groupId));
+      setGuestExpenses((prev) => prev.filter((e) => e.groupId !== groupId));
+      setGuestSettlements((prev) => prev.filter((s) => s.groupId !== groupId));
       if (selectedGroupId === groupId) {
         navigate('/groups');
       }
@@ -1329,19 +1447,17 @@ export default function App() {
     const targetGroup = groups.find((g) => g.id === groupId);
     LocalRepository.deleteGroup(groupId, user.id);
     setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    setExpenses((prev) => prev.filter((e) => e.groupId !== groupId));
+    setSettlements((prev) => prev.filter((s) => s.groupId !== groupId));
     if (selectedGroupId === groupId) {
       navigate('/groups');
     }
-    setAuditLogs((prev) => [
-      {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        level: 'WARN',
-        message: `Squad deleted: "${targetGroup?.name || groupId}"`,
-        source: 'squad-manager',
-      },
-      ...prev,
-    ]);
+    // Requirement 7: Purge audit logs containing this squad's ID or name
+    setAuditLogs((prev) =>
+      prev.filter(
+        (log) => !log.message.includes(groupId) && (!targetGroup || !log.message.includes(targetGroup.name))
+      )
+    );
   };
 
   const handleRemoveMember = (groupId: string, memberId: string) => {
@@ -1821,6 +1937,7 @@ export default function App() {
             <ProfileView
               user={activeUser}
               onSaveUser={handleSaveUser}
+              onDeleteAccount={handleDeleteMyAccount}
               lang={lang}
               onNavigate={navigate}
               isGuestSession={isGuestSession}

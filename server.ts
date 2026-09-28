@@ -49,6 +49,105 @@ async function startServer() {
   const deletedExpenseIds = new Set<string>();
   const deletedGroupIds = new Set<string>();
   const deletedSettlementIds = new Set<string>();
+  const deletedUserIds = new Set<string>();
+
+  // Helper functions for True Permanent Deletion and Cascade Purge
+  const purgeUserServerData = (userId: string, email?: string) => {
+    const existingUser = serverRegisteredUsers.get(userId);
+    const cleanEmail = (email || existingUser?.email || '').trim().toLowerCase();
+    const now = new Date().toISOString();
+
+    // 1. Permanently remove user and free up email
+    serverRegisteredUsers.delete(userId);
+    deletedUserIds.add(userId);
+
+    if (cleanEmail) {
+      for (const [uid, u] of serverRegisteredUsers.entries()) {
+        if (u.email && u.email.toLowerCase() === cleanEmail) {
+          serverRegisteredUsers.delete(uid);
+          deletedUserIds.add(uid);
+        }
+      }
+    }
+
+    // 2. Cascade delete all expenses owned/created/paid by user
+    for (const [expId, exp] of serverExpenses.entries()) {
+      const isUserExpense =
+        exp.paidByUserId === userId ||
+        exp.createdBy === userId ||
+        (cleanEmail && exp.createdByEmail?.toLowerCase() === cleanEmail);
+
+      if (isUserExpense) {
+        serverExpenses.delete(expId);
+        deletedExpenseIds.add(expId);
+      } else if (Array.isArray(exp.splits)) {
+        const remainingSplits = exp.splits.filter(
+          (s: any) => s.userId !== userId && (!cleanEmail || s.userEmail?.toLowerCase() !== cleanEmail)
+        );
+        if (remainingSplits.length === 0) {
+          serverExpenses.delete(expId);
+          deletedExpenseIds.add(expId);
+        } else {
+          serverExpenses.set(expId, { ...exp, splits: remainingSplits, updatedAt: now });
+        }
+      }
+    }
+
+    // 3. Cascade delete all settlements involving user
+    for (const [stlId, stl] of serverSettlements.entries()) {
+      if (stl.fromUserId === userId || stl.toUserId === userId) {
+        serverSettlements.delete(stlId);
+        deletedSettlementIds.add(stlId);
+      }
+    }
+
+    // 4. Update squads: remove user from membership; delete empty or exclusively owned squads
+    for (const [grpId, grp] of serverGroups.entries()) {
+      if (Array.isArray(grp.members)) {
+        const remaining = grp.members.filter(
+          (m: any) => m.id !== userId && (!cleanEmail || m.email?.toLowerCase() !== cleanEmail)
+        );
+        const wasCreatedByUser = grp.createdBy === userId;
+        if (remaining.length === 0 || (wasCreatedByUser && remaining.length === 0)) {
+          serverGroups.delete(grpId);
+          deletedGroupIds.add(grpId);
+          for (const [expId, exp] of serverExpenses.entries()) {
+            if (exp.groupId === grpId) {
+              serverExpenses.delete(expId);
+              deletedExpenseIds.add(expId);
+            }
+          }
+          for (const [stlId, stl] of serverSettlements.entries()) {
+            if (stl.groupId === grpId) {
+              serverSettlements.delete(stlId);
+              deletedSettlementIds.add(stlId);
+            }
+          }
+        } else if (remaining.length !== grp.members.length) {
+          serverGroups.set(grpId, { ...grp, members: remaining, updatedAt: now });
+        }
+      }
+    }
+  };
+
+  const purgeGroupServerData = (groupId: string) => {
+    serverGroups.delete(groupId);
+    deletedGroupIds.add(groupId);
+
+    for (const [expId, exp] of serverExpenses.entries()) {
+      if (exp.groupId === groupId) {
+        serverExpenses.delete(expId);
+        deletedExpenseIds.add(expId);
+      }
+    }
+
+    for (const [stlId, stl] of serverSettlements.entries()) {
+      if (stl.groupId === groupId) {
+        serverSettlements.delete(stlId);
+        deletedSettlementIds.add(stlId);
+      }
+    }
+  };
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
@@ -495,8 +594,7 @@ async function startServer() {
               });
               deletedGroupIds.delete(grp.id);
             } else if (mut.operation === "DELETE") {
-              serverGroups.delete(mut.entityId);
-              deletedGroupIds.add(mut.entityId);
+              purgeGroupServerData(mut.entityId);
             }
           } else if (mut.entityType === "settlement") {
             const stl = mut.payload;
@@ -534,7 +632,7 @@ async function startServer() {
                 updatedAt: now,
               });
             } else if (mut.operation === "DELETE") {
-              serverRegisteredUsers.delete(mut.entityId);
+              purgeUserServerData(mut.entityId, usr?.email);
             }
           }
 
@@ -595,10 +693,76 @@ async function startServer() {
         deletedExpenseIds: Array.from(deletedExpenseIds),
         deletedGroupIds: Array.from(deletedGroupIds),
         deletedSettlementIds: Array.from(deletedSettlementIds),
+        deletedUserIds: Array.from(deletedUserIds),
       });
     } catch (error: any) {
       console.error("Sync Pull Error:", error);
       return res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
+  });
+
+  // User Self-Deletion Endpoint: DELETE /api/auth/account
+  app.delete("/api/auth/account", (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const headerUserId = (req.headers["x-user-id"] as string) || "";
+      const headerUserEmail = ((req.headers["x-user-email"] as string) || "").trim().toLowerCase();
+      const { userId: bodyUserId, email: bodyEmail } = req.body || {};
+
+      let targetUserId = headerUserId || bodyUserId || "";
+      let targetEmail = headerUserEmail || bodyEmail || "";
+
+      if (!targetUserId && authHeader.startsWith("Bearer ")) {
+        const tokenVal = authHeader.substring(7).trim();
+        if (tokenVal.startsWith("usr_")) {
+          targetUserId = tokenVal;
+        }
+      }
+
+      if (!targetUserId && !targetEmail) {
+        return res.status(401).json({ success: false, error: "Unauthorized: User identifier required for account deletion." });
+      }
+
+      // Execute comprehensive cascade purge
+      purgeUserServerData(targetUserId, targetEmail);
+
+      return res.status(200).json({
+        success: true,
+        message: "Account and all associated application data have been permanently deleted.",
+      });
+    } catch (err: any) {
+      console.error("Account Deletion Error:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Failed to delete account." });
+    }
+  });
+
+  // Admin User Deletion Endpoint: DELETE /api/admin/users/:id
+  app.delete("/api/admin/users/:id", (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || "";
+      const adminEmail = ((req.headers["x-admin-email"] as string) || "").trim().toLowerCase();
+
+      const isFixedAdmin =
+        authHeader === "Bearer Admin@Tallix2026!" ||
+        authHeader.includes("Admin@Tallix2026!") ||
+        (adminEmail === "abdulatiflemon@gmail.com" && authHeader.length > 5);
+
+      if (!isFixedAdmin) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Administrative credentials required." });
+      }
+
+      const userIdToDelete = req.params.id;
+      const { email } = req.body || {};
+
+      purgeUserServerData(userIdToDelete, email);
+
+      return res.status(200).json({
+        success: true,
+        message: `User ${userIdToDelete} permanently purged from application database.`,
+      });
+    } catch (err: any) {
+      console.error("Admin User Deletion Error:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Failed to delete user." });
     }
   });
 

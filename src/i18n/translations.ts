@@ -202,6 +202,10 @@ export const translations = {
     rejected: 'Rejected',
     allSquadDataRemoved: 'All squad data and expenses will be permanently deleted.',
     areYouSureDeleteSquad: 'Are you sure you want to delete squad',
+    deleteAccount: 'Delete Account',
+    dangerZone: 'Danger Zone',
+    deleteAccountWarning: 'Permanently delete your account and all associated data. Your personal expenses, settlements, and squad memberships will be permanently purged. This action cannot be undone.',
+    confirmDeleteAccount: 'Are you sure you want to permanently delete your account? All your personal expenses, settlements, and squad memberships will be permanently purged. Your email will be freed up for future registration.',
     reset: 'Reset',
 
     // Analytics View
@@ -599,6 +603,10 @@ export const translations = {
     rejected: 'প্রত্যাখ্যাত',
     allSquadDataRemoved: 'স্কোয়াডের সমস্ত তথ্য এবং খরচ স্থায়ীভাবে মুছে যাবে।',
     areYouSureDeleteSquad: 'আপনি কি নিশ্চিত যে এই স্কোয়াডটি মুছে ফেলতে চান?',
+    deleteAccount: 'অ্যাকাউন্ট মুছে ফেলুন',
+    dangerZone: 'বিপদজনক অঞ্চল',
+    deleteAccountWarning: 'স্থায়ীভাবে আপনার অ্যাকাউন্ট এবং সমস্ত সংশ্লিষ্ট তথ্য মুছে ফেলুন। আপনার ব্যক্তিগত খরচ, পরিশোধ এবং স্কোয়াড সদস্যপদ সম্পূর্ণভাবে মুছে যাবে। এই কাজটি পূর্বাবস্থায় ফিরিয়ে আনা যাবে না।',
+    confirmDeleteAccount: 'আপনি কি নিশ্চিত যে আপনি আপনার অ্যাকাউন্ট স্থায়ীভাবে মুছে ফেলতে চান? আপনার সমস্ত ব্যক্তিগত খরচ, পরিশোধ এবং স্কোয়াড সদস্যপদ সম্পূর্ণ মুছে ফেলা হবে।',
     reset: 'পুনরায় সেট করুন',
 
     // Analytics View
