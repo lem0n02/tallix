@@ -19,7 +19,8 @@ import {
   Receipt,
   Calendar,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Scale
 } from 'lucide-react';
 import { TransactionDetailsModal } from '../components/TransactionDetailsModal';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -32,6 +33,7 @@ interface DashboardViewProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenNewTransaction: () => void;
   onOpenSettleUp: () => void;
+  onOpenSettlement?: () => void;
   onSaveExpense: (expense: Omit<Expense, 'id'>) => void;
   onUpdateExpenseStatus: (id: string, status: 'Settled' | 'Pending' | 'Flagged') => void;
   onDeleteExpense: (id: string) => void;
@@ -47,6 +49,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectTab,
   onOpenNewTransaction,
   onOpenSettleUp,
+  onOpenSettlement,
   onSaveExpense,
   onUpdateExpenseStatus,
   onDeleteExpense,
@@ -231,11 +234,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span className="truncate">{t('newTransaction')}</span>
         </button>
         <button
-          onClick={onOpenSettleUp}
+          onClick={onOpenSettlement || onOpenSettleUp}
           className="bg-[#0c1220] sm:bg-[#18181b] hover:bg-[#131b2e] sm:hover:bg-[#27272a] border border-[#1e293b] sm:border-[#27272a] text-white sm:text-[#fafafa] font-semibold sm:font-bold text-xs py-2.5 sm:py-2.5 px-3 sm:px-4 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer active:scale-[0.98] min-h-[42px]"
+          title="Open Settlement"
         >
-          <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#10b981] sm:text-emerald-400" />
-          <span className="truncate">{t('settleUp')}</span>
+          <Scale className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#10b981] sm:text-emerald-400" />
+          <span className="truncate">{t('settlement') || 'Settlement'}</span>
         </button>
       </div>
 

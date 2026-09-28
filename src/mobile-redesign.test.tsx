@@ -112,7 +112,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
     expect(html).toContain('All shared debts cleared');
   });
 
-  it('renders New Transaction and Settle Up action buttons', () => {
+  it('renders New Transaction and Settlement action buttons', () => {
     const html = renderToString(
       <LanguageProvider>
         <DashboardView
@@ -127,7 +127,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
     );
 
     expect(html).toContain('New Transaction');
-    expect(html).toContain('Settle Up');
+    expect(html).toContain('Settlement');
     // Verify side-by-side layout with mobile vertical separation gap (14px mb-3.5 on mobile, sm:my-0 on desktop)
     expect(html).toContain('grid grid-cols-2 gap-2 sm:gap-2 w-full mt-0.5 mb-3.5 sm:my-0');
   });
@@ -259,7 +259,7 @@ describe('Mobile Home / Dashboard Redesign', () => {
       expect(html).toContain('grid grid-cols-2 gap-2 sm:gap-2 w-full mt-0.5 mb-3.5 sm:my-0');
       // Both buttons present
       expect(html).toContain('New Transaction');
-      expect(html).toContain('Settle Up');
+      expect(html).toContain('Settlement');
       // Recent Expenses ledger container present directly below
       expect(html).toContain('Recent Expenses');
       // No horizontal overflow classes or full-width button breakage
