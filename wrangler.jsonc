@@ -21,6 +21,7 @@
     }
   ],
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "GOOGLE_CLIENT_ID": ""
   }
 }

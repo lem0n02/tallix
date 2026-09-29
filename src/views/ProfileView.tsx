@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, Mail, DollarSign, Camera, Upload, Trash2, Lock, CheckCircle2, Shield, AlertCircle, FileText, Eye, Download, Calendar } from 'lucide-react';
+import { User, Upload, Trash2, CheckCircle2, AlertCircle, FileText, Eye, Download, Calendar } from 'lucide-react';
 import { UserProfile, LanguageMode, Expense, Settlement } from '../types';
 import { getAvailableReportMonths, downloadMonthlyPdf } from '../utils/pdfReportGenerator';
 import { formatMonthDisplay } from '../utils/monthFilter';
@@ -184,42 +184,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Section 1: PROFILE PICTURE */}
-        <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] flex items-center gap-2">
-              <Camera className="w-4 h-4 text-emerald-400" />
-              <span>Profile Picture</span>
-            </label>
-            <span className="text-[11px] text-[#71717a]">Supported: JPG, PNG, WebP (Max 5MB)</span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center gap-5">
-            <div className="relative group shrink-0">
-              <div
-                className={`w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-gradient-to-tr ${
-                  user.avatarGradient || 'from-emerald-500 to-teal-500'
-                } flex items-center justify-center font-bold text-2xl text-white shadow-lg border-2 border-[#27272a]`}
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={user.name}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span>{getInitials(user.name)}</span>
-                )}
-              </div>
+      {/* Unified Profile Settings Form */}
+      <form onSubmit={handleSubmit} className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-6">
+        {/* Profile Picture */}
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] block mb-3">
+            Profile Picture
+          </label>
+          <div className="flex items-center gap-4">
+            <div
+              className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-gradient-to-tr ${
+                user.avatarGradient || 'from-emerald-500 to-teal-500'
+              } flex items-center justify-center font-bold text-xl sm:text-2xl text-white shadow-md border border-[#27272a] shrink-0`}
+            >
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={user.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span>{getInitials(user.name)}</span>
+              )}
             </div>
 
-            <div className="flex flex-col gap-2.5 w-full sm:w-auto">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <label
                   htmlFor="profile-picture-upload-input"
-                  className="bg-white hover:bg-[#e4e4e7] active:scale-95 text-black text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="bg-white hover:bg-[#e4e4e7] active:scale-95 text-black text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>{avatarUrl ? 'Change Picture' : 'Upload Picture'}</span>
@@ -243,7 +237,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </button>
                 )}
               </div>
-
+              <p className="text-[11px] text-[#71717a]">Supported formats: JPG, PNG, WebP (Max 5MB)</p>
               {uploadError && (
                 <p className="text-xs text-red-400 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -254,20 +248,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        {/* Section 2: FULL NAME (READ-ONLY) */}
-        <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] flex items-center gap-2">
-              <User className="w-4 h-4 text-emerald-400" />
-              <span>Full Name</span>
-            </label>
-            <span className="text-[10px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1">
-              <Lock className="w-2.5 h-2.5" />
-              <span>Read-Only</span>
-            </span>
-          </div>
+        <div className="border-t border-[#27272a]" />
 
-          <div className="relative">
+        {/* Profile Inputs Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Full Name */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] block">
+              Full Name
+            </label>
             <input
               type="text"
               value={user.name || ''}
@@ -275,26 +264,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               disabled
               className="w-full bg-[#09090b]/80 border border-[#27272a] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-[#fafafa] font-medium opacity-90 cursor-not-allowed select-none"
             />
+            <p className="text-[11px] text-[#71717a]">
+              Full name is associated with your account identity.
+            </p>
           </div>
-          <p className="text-[11px] text-[#71717a]">
-            Full name is governed by your organization identity and cannot be altered from Profile.
-          </p>
-        </div>
 
-        {/* Section 3: EMAIL (READ-ONLY) */}
-        <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] flex items-center gap-2">
-              <Mail className="w-4 h-4 text-emerald-400" />
-              <span>Email Address</span>
+          {/* Email Address */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] block">
+              Email Address
             </label>
-            <span className="text-[10px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1">
-              <Lock className="w-2.5 h-2.5" />
-              <span>Read-Only</span>
-            </span>
-          </div>
-
-          <div className="relative">
             <input
               type="email"
               value={user.email || ''}
@@ -302,56 +281,47 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               disabled
               className="w-full bg-[#09090b]/80 border border-[#27272a] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-[#fafafa] font-mono opacity-90 cursor-not-allowed select-none"
             />
-          </div>
-          <p className="text-[11px] text-[#71717a]">
-            Your primary login email is fixed for account security and cross-device sync.
-          </p>
-        </div>
-
-        {/* Section 4: MONTHLY BUDGET */}
-        <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-emerald-400" />
-              <span>Monthly Personal Budget (BDT)</span>
-            </label>
-            <span className="text-[11px] text-emerald-400 font-mono font-bold">
-              ৳ {Number(monthlyBudget || 0).toLocaleString()}
-            </span>
+            <p className="text-[11px] text-[#71717a]">
+              Primary email used for account security and synchronization.
+            </p>
           </div>
 
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-400 font-bold text-sm">
-              ৳
+          {/* Monthly Personal Budget */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] block">
+                Monthly Personal Budget (BDT)
+              </label>
+              <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                ৳ {Number(monthlyBudget || 0).toLocaleString()}
+              </span>
             </div>
-            <input
-              type="number"
-              min="0"
-              step="500"
-              value={monthlyBudget}
-              onChange={(e) => setMonthlyBudget(e.target.value)}
-              placeholder="e.g. 25000"
-              className="w-full bg-[#09090b] border border-[#27272a] focus:border-emerald-500 rounded-xl pl-9 pr-4 py-2.5 text-xs sm:text-sm text-[#fafafa] font-mono focus:outline-none transition-colors"
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-400 font-bold text-sm">
+                ৳
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="500"
+                value={monthlyBudget}
+                onChange={(e) => setMonthlyBudget(e.target.value)}
+                placeholder="e.g. 25000"
+                className="w-full bg-[#09090b] border border-[#27272a] focus:border-emerald-500 rounded-xl pl-9 pr-4 py-2.5 text-xs sm:text-sm text-[#fafafa] font-mono focus:outline-none transition-colors"
+              />
+            </div>
+            <p className="text-[11px] text-[#71717a]">
+              Used for personal spend thresholds and monthly liquidity calculations.
+            </p>
           </div>
-          <p className="text-[11px] text-[#71717a]">
-            Used for calculating budget burn-rate alerts, liquidity telemetry, and spend thresholds.
-          </p>
         </div>
 
-        {/* Section 5: ACCOUNT & ROLE SUMMARY */}
-        <div className="bg-[#18181b]/40 border border-[#27272a] rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-blue-400" />
-            <span className="text-[#a1a1aa]">Account Governance:</span>
-            <span className="text-white font-semibold">{user.systemRole || 'User'}</span>
-            <span className="text-[#71717a] font-mono text-[10px]">({user.department || 'Workspace'})</span>
-          </div>
-
+        {/* Save Profile Changes */}
+        <div className="flex items-center justify-end pt-4 border-t border-[#27272a]">
           <button
             type="submit"
             disabled={isSaving}
-            className="bg-white hover:bg-[#e4e4e7] active:scale-95 disabled:opacity-50 text-black text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-2 ml-auto"
+            className="bg-white hover:bg-[#e4e4e7] active:scale-95 disabled:opacity-50 text-black text-xs font-bold px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-2"
           >
             {isSaving ? (
               <span>Saving Changes...</span>
@@ -365,76 +335,79 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </form>
 
-      {/* Section 6: MONTHLY REPORTS ARCHIVE (PART 8 & 9) */}
-      <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm mt-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#27272a] pb-3">
+      {/* Monthly Reports Section */}
+      <div className="bg-[#18181b]/70 border border-[#27272a] rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[#27272a]">
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#fafafa] flex items-center gap-2">
               <FileText className="w-4 h-4 text-emerald-400" />
               <span>Monthly Reports</span>
-            </h3>
+            </h2>
             <p className="text-xs text-[#a1a1aa] mt-0.5">
-              Official monthly accounting statements preserved and reproducible offline.
+              Monthly statements preserved and available offline.
             </p>
           </div>
-          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full w-fit">
-            {availableMonths.length} Statements Archived
-          </span>
+          {availableMonths.length > 0 && (
+            <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-md">
+              {availableMonths.length} {availableMonths.length === 1 ? 'Report' : 'Reports'}
+            </span>
+          )}
         </div>
 
-        <div className="space-y-2.5">
-          {availableMonths.map((mKey) => {
-            const display = formatMonthDisplay(mKey);
-            return (
-              <div
-                key={mKey}
-                className="bg-[#09090b] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                    <Calendar className="w-4.5 h-4.5" />
+        {availableMonths.length === 0 ? (
+          <p className="text-xs text-[#71717a] py-3 text-center">No monthly reports available yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {availableMonths.map((mKey) => {
+              const display = formatMonthDisplay(mKey);
+              return (
+                <div
+                  key={mKey}
+                  className="bg-[#09090b] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 sm:px-4 sm:py-3 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-semibold text-[#fafafa]">{display}</h3>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-[#fafafa]">{display}</h4>
-                    <p className="text-[10px] text-[#71717a] font-mono">Statement ID: TALLIX-{mKey.replace('-', '')}</p>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReportMonth(mKey)}
-                    className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-[#3f3f46]"
-                    title="View PDF Statement"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-blue-400" />
-                    <span>View PDF</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => downloadMonthlyPdf(mKey, user, expenses, settlements)}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-600/25 active:scale-95"
-                    title="Download PDF"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReportMonth(mKey)}
+                      className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer border border-[#3f3f46]"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-blue-400" />
+                      <span>View PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadMonthlyPdf(mKey, user, expenses, settlements)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Section 7: DANGER ZONE - ACCOUNT DELETION */}
+      {/* Danger Zone - Account Deletion */}
       {!user.isGuest && !isGuestSession && onDeleteAccount && (
-        <div className="bg-red-950/20 border border-red-500/30 rounded-2xl p-5 sm:p-6 space-y-4 shadow-sm mt-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-red-500/20 pb-4">
+        <div className="bg-red-950/20 border border-red-500/20 rounded-2xl p-5 sm:p-6 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold uppercase tracking-wider text-red-400 flex items-center gap-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-red-400 flex items-center gap-2">
                 <Trash2 className="w-4 h-4 text-red-400" />
                 <span>{t('dangerZone')}</span>
-              </h3>
+              </h2>
               <p className="text-xs text-[#a1a1aa] mt-1 max-w-xl">
                 {t('deleteAccountWarning')}
               </p>
@@ -442,15 +415,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 active:scale-95 shadow-sm"
+              className="px-3.5 py-2 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
               <span>{t('deleteAccount')}</span>
             </button>
           </div>
-          <p className="text-[11px] text-[#71717a]">
-            Account deletion will immediately release your email address so you or anyone else can freely register again from scratch.
-          </p>
         </div>
       )}
 

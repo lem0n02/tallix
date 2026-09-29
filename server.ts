@@ -6,6 +6,7 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { verifyGoogleToken } from "./src/services/googleTokenVerifier";
 
 async function startServer() {
   const app = express();
@@ -163,6 +164,12 @@ async function startServer() {
     });
   });
 
+  // Public Auth Config Endpoint: GET /api/auth/config
+  app.get("/api/auth/config", (req, res) => {
+    res.json({
+      googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "",
+    });
+  });
 
   // User Registration Endpoint: POST /api/auth/register
   app.post("/api/auth/register", (req, res) => {
@@ -302,6 +309,149 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err?.message || "Authentication failed." });
+    }
+  });
+
+  // Google Sign-In & User Identity Endpoint: POST /api/auth/google
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { idToken, accessToken } = req.body || {};
+      const token = idToken || accessToken;
+      const isAccessToken = !idToken && Boolean(accessToken);
+
+      if (!token || typeof token !== "string" || !token.trim()) {
+        return res.status(400).json({ success: false, error: "Google authentication token is required." });
+      }
+
+      const verifiedGoogle = await verifyGoogleToken(
+        token,
+        process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID,
+        isAccessToken
+      );
+
+      if (!verifiedGoogle || !verifiedGoogle.email) {
+        return res.status(401).json({ success: false, error: "Invalid or expired Google authentication token." });
+      }
+
+      if (!verifiedGoogle.emailVerified) {
+        return res.status(400).json({ success: false, error: "Google account email is not verified." });
+      }
+
+      const cleanEmail = verifiedGoogle.email.trim().toLowerCase();
+
+      // Check for existing user in serverRegisteredUsers
+      let matchedUser: any = null;
+      for (const u of serverRegisteredUsers.values()) {
+        if (u.email && u.email.toLowerCase() === cleanEmail) {
+          matchedUser = u;
+          break;
+        }
+      }
+
+      if (matchedUser) {
+        // Disabled user check
+        if (matchedUser.status === "Disabled") {
+          return res.status(403).json({
+            success: false,
+            error: "This user account has been disabled. Please contact the administrator.",
+          });
+        }
+
+        // Link Google ID & update avatar if not set
+        matchedUser.googleId = verifiedGoogle.sub;
+        matchedUser.authProvider = matchedUser.authProvider || "google";
+        if (!matchedUser.avatarUrl && verifiedGoogle.picture) {
+          matchedUser.avatarUrl = verifiedGoogle.picture;
+        }
+        matchedUser.updatedAt = new Date().toISOString();
+
+        const userSystemRole = matchedUser.systemRole === "Admin" ? "Admin" : "User";
+        const userRoleTitle = matchedUser.roleTitle || matchedUser.title || (userSystemRole === "Admin" ? "Super Administrator" : "Financial Member");
+        const userBudget = matchedUser.monthlyBudget !== undefined ? Number(matchedUser.monthlyBudget) : (matchedUser.liquidityLimit !== undefined ? Number(matchedUser.liquidityLimit) : 25000);
+
+        return res.status(200).json({
+          success: true,
+          isNewUser: false,
+          user: {
+            id: matchedUser.id,
+            name: matchedUser.name,
+            email: matchedUser.email,
+            systemRole: userSystemRole,
+            role: userSystemRole === "Admin" ? userRoleTitle : "User Member",
+            title: userRoleTitle,
+            roleTitle: userRoleTitle,
+            department: matchedUser.department || (userSystemRole === "Admin" ? "Management" : "Personal Workspace"),
+            avatarGradient: matchedUser.avatarGradient || "from-emerald-500 to-teal-500",
+            avatarUrl: matchedUser.avatarUrl || null,
+            status: matchedUser.status || "Active",
+            createdAt: matchedUser.createdAt,
+            updatedAt: matchedUser.updatedAt,
+            monthlyBudget: userBudget,
+            liquidityLimit: userBudget,
+            currentLiquidity: 0,
+            monthlyBurnRate: 0,
+          },
+        });
+      }
+
+      // New Google User creation (or previously deleted user)
+      // ADMIN SAFETY: NEVER automatically assign 'Admin' role to new Google signups!
+      const now = new Date().toISOString();
+      const newUserId = `usr_goog_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const userRoleTitle = "Financial Member";
+      const userDept = "Personal Workspace";
+      const userGradient = "from-blue-600 to-indigo-600";
+      const userBudget = 25000;
+
+      const newUser = {
+        id: newUserId,
+        name: verifiedGoogle.name || cleanEmail.split("@")[0],
+        email: cleanEmail,
+        passwordHash: null,
+        googleId: verifiedGoogle.sub,
+        authProvider: "google",
+        systemRole: "User", // Strictly 'User', never Admin
+        role: "User Member",
+        roleTitle: userRoleTitle,
+        title: userRoleTitle,
+        department: userDept,
+        avatarGradient: userGradient,
+        avatarUrl: verifiedGoogle.picture || null,
+        monthlyBudget: userBudget,
+        liquidityLimit: userBudget,
+        status: "Active",
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      serverRegisteredUsers.set(newUserId, newUser);
+
+      return res.status(201).json({
+        success: true,
+        isNewUser: true,
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          systemRole: "User",
+          role: "User Member",
+          title: userRoleTitle,
+          roleTitle: userRoleTitle,
+          department: userDept,
+          avatarGradient: userGradient,
+          avatarUrl: newUser.avatarUrl,
+          status: "Active",
+          createdAt: now,
+          updatedAt: now,
+          monthlyBudget: userBudget,
+          liquidityLimit: userBudget,
+          currentLiquidity: 0,
+          monthlyBurnRate: 0,
+        },
+      });
+    } catch (err: any) {
+      console.error("Google Auth Error:", err);
+      return res.status(500).json({ success: false, error: err?.message || "Google authentication failed." });
     }
   });
 

@@ -289,6 +289,118 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
   }
 }
 
+export interface GoogleLoginResult extends LoginResult {
+  isNewUser?: boolean;
+}
+
+/**
+ * Authoritative user login & registration via Google OAuth against Cloudflare D1 / backend.
+ * Verifies token cryptographically on the server, links existing accounts, creates new normal accounts,
+ * and caches the authenticated session locally in IndexedDB for subsequent offline use.
+ */
+export async function loginUserViaGoogle(token: string, isAccessToken = false): Promise<GoogleLoginResult> {
+  if (!token || !token.trim()) {
+    return { success: false, error: 'Google authentication token is required.' };
+  }
+
+  // Google OAuth requires an online step
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return {
+      success: false,
+      error: 'Google Sign-In requires an active internet connection. Please connect to the internet and try again.',
+      isOffline: true,
+    };
+  }
+
+  const endpointUrl = buildApiUrl('/api/auth/google');
+  try {
+    const payload = isAccessToken
+      ? { accessToken: token.trim() }
+      : { idToken: token.trim() };
+
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.success) {
+      const errorMessage = data.error || (
+        response.status === 403
+          ? 'This user account has been disabled. Please contact the administrator.'
+          : response.status === 401
+            ? 'Invalid or expired Google authentication token.'
+            : 'Google authentication failed. Please try again.'
+      );
+      return { success: false, error: errorMessage };
+    }
+
+    const authUser = data.user;
+    const userBudget = authUser.monthlyBudget !== undefined
+      ? Number(authUser.monthlyBudget)
+      : (authUser.liquidityLimit !== undefined ? Number(authUser.liquidityLimit) : 25000);
+
+    const userProfile: UserProfile = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      role: authUser.role || 'User Member',
+      systemRole: authUser.systemRole || 'User',
+      title: authUser.title || authUser.roleTitle || 'Financial Member',
+      department: authUser.department || 'Personal Workspace',
+      avatarGradient: authUser.avatarGradient || 'from-emerald-500 to-teal-500',
+      avatarUrl: authUser.avatarUrl || undefined,
+      monthlyBudget: userBudget,
+      liquidityLimit: userBudget,
+      currentLiquidity: authUser.currentLiquidity || 0,
+      monthlyBurnRate: authUser.monthlyBurnRate || 0,
+      status: authUser.status || 'Active',
+    };
+
+    // Cache the authoritative user in local IndexedDB for subsequent offline access
+    const registeredUserRecord: RegisteredUser = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      systemRole: authUser.systemRole || 'User',
+      roleTitle: authUser.roleTitle || authUser.title || 'Financial Member',
+      department: authUser.department || 'Personal Workspace',
+      avatarGradient: authUser.avatarGradient || 'from-emerald-500 to-teal-500',
+      avatarUrl: authUser.avatarUrl || undefined,
+      monthlyBudget: userBudget,
+      liquidityLimit: userBudget,
+      createdAt: authUser.createdAt || new Date().toISOString().split('T')[0],
+      status: authUser.status || 'Active',
+      isVerified: true,
+      updatedAt: authUser.updatedAt || new Date().toISOString(),
+    };
+
+    try {
+      await idbPut(STORES.USERS, registeredUserRecord);
+    } catch (cacheErr) {
+      console.warn('[AuthService] Could not cache Google login record locally:', cacheErr);
+    }
+
+    return {
+      success: true,
+      user: userProfile,
+      registeredUser: registeredUserRecord,
+      isNewUser: data.isNewUser,
+    };
+  } catch (networkErr: any) {
+    console.error('[AuthService] Network error during Google login:', networkErr);
+    return {
+      success: false,
+      error: 'Network connection failed during Google authentication. Please check your network and try again.',
+      isOffline: true,
+    };
+  }
+}
+
 export interface UpdateProfileInput {
   userId: string;
   email?: string;
