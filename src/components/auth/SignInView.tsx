@@ -4,7 +4,7 @@ import { AuthLayout } from './AuthLayout';
 import { UserProfile, RegisteredUser } from '../../types';
 import { isFixedAdminCredentials, getFixedAdminProfile } from '../../config/fixedAdminAuth';
 import { loginUserViaD1, loginUserViaGoogle } from '../../services/authService';
-import { buildApiUrl } from '../../services/apiConfig';
+import { buildApiUrl, fetchGoogleClientId, getGoogleClientIdSync } from '../../services/apiConfig';
 
 interface SignInViewProps {
   onBackToHome?: () => void;
@@ -41,23 +41,21 @@ export const SignInView: React.FC<SignInViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [runtimeClientId, setRuntimeClientId] = useState<string>(
-    (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim()
-  );
+  const [runtimeClientId, setRuntimeClientId] = useState<string>(() => getGoogleClientIdSync());
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
 
   useEffect(() => {
-    // If not injected at Vite build time, dynamically resolve public Client ID from Cloudflare Worker
+    let isMounted = true;
     if (!runtimeClientId) {
-      fetch(buildApiUrl('/api/auth/config'))
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data?.googleClientId) {
-            setRuntimeClientId(data.googleClientId.trim());
-          }
-        })
-        .catch(() => {});
+      fetchGoogleClientId().then((id) => {
+        if (isMounted && id) {
+          setRuntimeClientId(id);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [runtimeClientId]);
 
   const validate = () => {
@@ -124,20 +122,19 @@ export const SignInView: React.FC<SignInViewProps> = ({
 
   const handleGoogleSignIn = async () => {
     setErrors({});
-    let clientId = runtimeClientId || (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+    let clientId = runtimeClientId || getGoogleClientIdSync();
 
     if (!clientId) {
+      setGoogleLoading(true);
       try {
-        const res = await fetch(buildApiUrl('/api/auth/config'));
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.googleClientId) {
-            clientId = data.googleClientId.trim();
-            setRuntimeClientId(clientId);
-          }
+        clientId = await fetchGoogleClientId();
+        if (clientId) {
+          setRuntimeClientId(clientId);
         }
       } catch {
-        // fallback to error
+        // ignore
+      } finally {
+        setGoogleLoading(false);
       }
     }
 

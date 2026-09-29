@@ -1352,10 +1352,43 @@ export default function App() {
     ]);
   };
 
-  const handleJoinGroupByCode = (inviteCode: string): { success: boolean; message: string } => {
+  const handleJoinGroupByCode = async (inviteCode: string): Promise<{ success: boolean; message: string }> => {
     const cleanCode = inviteCode.trim().toUpperCase();
     const targetGroups = isGuestSession ? guestGroups : groups;
-    const matchedGroup = targetGroups.find((g) => g.inviteCode?.toUpperCase() === cleanCode);
+    let matchedGroup = targetGroups.find((g) => g.inviteCode?.toUpperCase() === cleanCode);
+
+    if (!matchedGroup && !isGuestSession) {
+      try {
+        const res = await fetch(buildApiUrl('/api/groups/join'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.id}`,
+            'X-User-Id': user.id,
+            'X-User-Email': user.email,
+          },
+          body: JSON.stringify({
+            inviteCode: cleanCode,
+            user: { id: user.id, name: user.name, email: user.email },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success && data.group) {
+          const joinedGroup = data.group;
+          setGroups((prev) => {
+            const exists = prev.some((g) => g.id === joinedGroup.id);
+            return exists ? prev.map((g) => (g.id === joinedGroup.id ? joinedGroup : g)) : [...prev, joinedGroup];
+          });
+          LocalRepository.createGroup(joinedGroup, user.id);
+          navigate(`/groups/${encodeURIComponent(joinedGroup.id)}`);
+          return { success: true, message: data.message || `Successfully joined ${joinedGroup.name}!` };
+        } else if (!res.ok) {
+          return { success: false, message: data.error || 'Invalid invite code. Squad not found.' };
+        }
+      } catch (err: any) {
+        console.error('Remote squad join error:', err);
+      }
+    }
 
     if (!matchedGroup) {
       return { success: false, message: 'Invalid invite code. Squad not found.' };

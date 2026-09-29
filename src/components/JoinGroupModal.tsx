@@ -4,8 +4,8 @@ import { X, UserPlus, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
 interface JoinGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onJoinGroup?: (inviteCode: string) => { success: boolean; message: string };
-  onJoin?: (inviteCode: string) => { success: boolean; message: string };
+  onJoinGroup?: (inviteCode: string) => { success: boolean; message: string } | Promise<{ success: boolean; message: string }>;
+  onJoin?: (inviteCode: string) => { success: boolean; message: string } | Promise<{ success: boolean; message: string }>;
 }
 
 export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({
@@ -37,17 +37,22 @@ export const JoinGroupModal: React.FC<JoinGroupModalProps> = ({
       return;
     }
 
-    const result = joinFn(cleanCode);
-    if (result.success) {
-      setSuccessMsg(result.message);
-      setTimeout(() => {
-        setInviteCode('');
-        setSuccessMsg(null);
-        onClose();
-      }, 1200);
-    } else {
-      setError(result.message);
-    }
+    Promise.resolve(joinFn(cleanCode))
+      .then((result) => {
+        if (result.success) {
+          setSuccessMsg(result.message);
+          setTimeout(() => {
+            setInviteCode('');
+            setSuccessMsg(null);
+            onClose();
+          }, 1200);
+        } else {
+          setError(result.message);
+        }
+      })
+      .catch((err) => {
+        setError(err?.message || 'Failed to join squad.');
+      });
   };
 
   const handleClose = () => {

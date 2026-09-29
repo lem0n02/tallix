@@ -19,7 +19,10 @@ export interface Env {
   ASSETS?: { fetch(request: Request): Promise<Response> };
   GEMINI_API_KEY?: string;
   ENVIRONMENT?: string;
+  VITE_GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_WEB_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 }
 
@@ -29,12 +32,13 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Device-Id, X-Admin-Email, X-User-Id, X-User-Email',
 };
 
-function jsonResponse(data: any, status = 200) {
+function jsonResponse(data: any, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
       ...CORS_HEADERS,
+      ...extraHeaders,
     },
   });
 }
@@ -153,6 +157,26 @@ async function verifyGoogleToken(
   }
 }
 
+function resolveGoogleClientId(env: Env): string {
+  const rawId = (
+    env.VITE_GOOGLE_CLIENT_ID ||
+    env.GOOGLE_CLIENT_ID ||
+    env.GOOGLE_OAUTH_CLIENT_ID ||
+    env.GOOGLE_WEB_CLIENT_ID ||
+    ''
+  ).trim();
+  return rawId.replace(/^["']|["']$/g, '');
+}
+
+function injectEnvIntoHtml(html: string, googleClientId?: string): string {
+  if (!googleClientId) return html;
+  const script = `<script>window.__TALLIX_ENV__=Object.assign(window.__TALLIX_ENV__||{},{VITE_GOOGLE_CLIENT_ID:${JSON.stringify(googleClientId)}});</script>`;
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${script}</head>`);
+  }
+  return script + html;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -193,7 +217,16 @@ export default {
       // 2. Root path / handling
       if (url.pathname === '/' || url.pathname === '') {
         if (env.ASSETS) {
-          return await env.ASSETS.fetch(request);
+          const googleClientId = resolveGoogleClientId(env);
+          const assetRes = await env.ASSETS.fetch(request);
+          if (googleClientId && assetRes.status === 200 && assetRes.headers.get('content-type')?.includes('text/html')) {
+            const html = await assetRes.text();
+            const injected = injectEnvIntoHtml(html, googleClientId);
+            const headers = new Headers(assetRes.headers);
+            headers.delete('content-length');
+            return new Response(injected, { status: 200, headers });
+          }
+          return assetRes;
         }
         // Fallback to health JSON if static assets binding is not yet attached
         let dbOk = false;
@@ -214,12 +247,19 @@ export default {
         });
       }
 
-      // 1b. Public Auth Config Endpoint: GET /api/auth/config
+      // 1b. Public Auth Config Endpoint: GET/HEAD /api/auth/config
       // Safely exposes only public client ID to frontend (never secrets)
-      if (url.pathname === '/api/auth/config' && request.method === 'GET') {
-        return jsonResponse({
-          googleClientId: env.GOOGLE_CLIENT_ID || '',
-        });
+      const cleanPath = url.pathname.replace(/\/+$/, '') || '/';
+      if (cleanPath === '/api/auth/config' && (request.method === 'GET' || request.method === 'HEAD')) {
+        const googleClientId = resolveGoogleClientId(env);
+        return jsonResponse(
+          {
+            googleClientId,
+            configured: Boolean(googleClientId),
+          },
+          200,
+          { 'Cache-Control': 'public, max-age=60' }
+        );
       }
 
       // 2. Registration Endpoint: POST /api/auth/register
@@ -410,7 +450,14 @@ export default {
 
           // Verify password hash with SHA-256
           const submittedHash = await hashPassword(password);
-          if (user.password_hash && user.password_hash !== submittedHash) {
+          if (!user.password_hash) {
+            return jsonResponse({
+              success: false,
+              error: 'This account was registered using Google Sign-In. Please sign in with Google.',
+            }, 401);
+          }
+
+          if (user.password_hash !== submittedHash) {
             return jsonResponse({
               success: false,
               error: 'Invalid email or password. Please try again.',
@@ -463,7 +510,8 @@ export default {
             return jsonResponse({ success: false, error: 'Google authentication token is required.' }, 400);
           }
 
-          const verifiedGoogle = await verifyGoogleToken(token, env.GOOGLE_CLIENT_ID, isAccessToken);
+          const expectedClientId = resolveGoogleClientId(env) || undefined;
+          const verifiedGoogle = await verifyGoogleToken(token, expectedClientId, isAccessToken);
           if (!verifiedGoogle || !verifiedGoogle.email) {
             return jsonResponse({ success: false, error: 'Invalid or expired Google authentication token.' }, 401);
           }
@@ -663,17 +711,39 @@ export default {
           const queryUserId = url.searchParams.get('userId') || '';
           const queryEmail = (url.searchParams.get('email') || '').trim().toLowerCase();
 
-          let targetUserId = headerUserId || queryUserId;
-          let targetEmail = headerUserEmail || queryEmail;
-          if (!targetUserId && authHeader.startsWith('Bearer ')) {
+          // Authoritative caller identification
+          let callerId = headerUserId;
+          if (!callerId && authHeader.startsWith('Bearer ')) {
             const tokenVal = authHeader.substring(7).trim();
             if (tokenVal.startsWith('usr_')) {
-              targetUserId = tokenVal;
+              callerId = tokenVal;
             }
           }
+          let callerEmail = headerUserEmail;
 
-          if (!targetUserId && !targetEmail) {
-            return jsonResponse({ success: false, error: 'Unauthorized: User identifier required.' }, 401);
+          // Check if admin
+          const isAdmin =
+            authHeader === 'Bearer Admin@Tallix2026!' ||
+            authHeader.includes('Admin@Tallix2026!') ||
+            (callerEmail === 'abdulatiflemon@gmail.com' && authHeader.length > 5);
+
+          if (!callerId && !callerEmail && !isAdmin) {
+            return jsonResponse({ success: false, error: 'Unauthorized: User authentication required.' }, 401);
+          }
+
+          let targetUserId = queryUserId || callerId;
+          let targetEmail = queryEmail || callerEmail;
+
+          // Enforce isolation: non-admins can ONLY access their own profile
+          if (!isAdmin) {
+            if (queryUserId && callerId && queryUserId !== callerId) {
+              return jsonResponse({ success: false, error: 'Forbidden: You cannot access another user profile.' }, 403);
+            }
+            if (queryEmail && callerEmail && queryEmail !== callerEmail) {
+              return jsonResponse({ success: false, error: 'Forbidden: You cannot access another user profile.' }, 403);
+            }
+            targetUserId = callerId || targetUserId;
+            targetEmail = callerEmail || targetEmail;
           }
 
           let user: any = null;
@@ -904,19 +974,30 @@ export default {
           const headerUserId = (request.headers.get('X-User-Id') || '').trim();
           const headerEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
 
+          // Authoritative caller identity from Bearer token
+          let authenticatedUserId = '';
+          if (authHeader.startsWith('Bearer usr_')) {
+            authenticatedUserId = authHeader.substring(7).trim();
+          } else if (headerUserId && authHeader.startsWith('Bearer ') && authHeader.length > 10) {
+            authenticatedUserId = headerUserId;
+          }
+
+          if (!authenticatedUserId) {
+            return jsonResponse({ success: false, error: 'Unauthorized: Valid authentication token required to delete account.' }, 401);
+          }
+
           let body: any = {};
           try { body = await request.json(); } catch {}
-          let targetUserId = headerUserId || body.userId || '';
-          let targetEmail = headerEmail || (body.email || '').trim().toLowerCase();
+          const requestedUserId = (body.userId || headerUserId || '').trim();
+          const requestedEmail = (body.email || headerEmail || '').trim().toLowerCase();
 
-          if (!targetUserId && authHeader.startsWith('Bearer ')) {
-            const token = authHeader.substring(7).trim();
-            if (token.startsWith('usr_')) targetUserId = token;
+          // Strict ownership enforcement: users can ONLY delete their own authenticated account
+          if (requestedUserId && requestedUserId !== authenticatedUserId) {
+            return jsonResponse({ success: false, error: 'Forbidden: You can only delete your own authenticated account.' }, 403);
           }
 
-          if (!targetUserId && !targetEmail) {
-            return jsonResponse({ success: false, error: 'Unauthorized: User identifier required.' }, 401);
-          }
+          const targetUserId = authenticatedUserId;
+          const targetEmail = requestedEmail || headerEmail;
 
           const now = new Date().toISOString();
           const userRow: any = await env.DB.prepare('SELECT id, email FROM users WHERE id = ? OR LOWER(email) = ?').bind(targetUserId, targetEmail).first();
@@ -987,6 +1068,93 @@ export default {
           return jsonResponse({ success: true, message: 'User permanently purged.' });
         } catch (err: any) {
           return jsonResponse({ success: false, error: err?.message || 'Failed to delete user.' }, 500);
+        }
+      }
+
+      // Squad Join Endpoint: POST /api/groups/join or POST /api/squads/join
+      // Server-side D1 invite-code lookup and atomic squad membership joining
+      if ((url.pathname === '/api/groups/join' || url.pathname === '/api/squads/join') && request.method === 'POST') {
+        try {
+          const authHeader = request.headers.get('Authorization') || '';
+          const headerUserId = request.headers.get('X-User-Id') || '';
+          const headerEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
+
+          const body = (await request.json().catch(() => ({}))) as any;
+          const inviteCode = (body.inviteCode || body.code || '').trim().toUpperCase();
+          const userObj = body.user || {};
+          const userId = userObj.id || headerUserId || (authHeader.startsWith('Bearer usr_') ? authHeader.substring(7).trim() : '');
+          const userName = userObj.name || 'Member';
+          const userEmail = (userObj.email || headerEmail || '').trim().toLowerCase();
+
+          if (!inviteCode) {
+            return jsonResponse({ success: false, error: 'Please enter a squad invite code.' }, 400);
+          }
+          if (!userId) {
+            return jsonResponse({ success: false, error: 'Unauthorized: User identification required to join squad.' }, 401);
+          }
+
+          // Authoritative search in D1
+          const groupRow: any = await env.DB.prepare(
+            'SELECT * FROM groups WHERE UPPER(invite_code) = ? AND deleted_at IS NULL LIMIT 1'
+          ).bind(inviteCode).first();
+
+          if (!groupRow) {
+            return jsonResponse({ success: false, error: 'Invalid invite code. Squad not found.' }, 404);
+          }
+
+          let members: any[] = [];
+          try {
+            members = groupRow.members_json ? JSON.parse(groupRow.members_json) : [];
+          } catch {
+            members = [];
+          }
+
+          const isAlreadyMember = members.some((m: any) =>
+            m.id === userId || (userEmail && (m.email || '').toLowerCase() === userEmail)
+          );
+
+          if (isAlreadyMember) {
+            return jsonResponse({
+              success: false,
+              error: `You are already a member of ${groupRow.name}.`,
+              group: {
+                ...groupRow,
+                members,
+                inviteCode: groupRow.invite_code,
+              },
+            }, 400);
+          }
+
+          // Add user as member
+          const newMember = {
+            id: userId,
+            name: userName,
+            email: userEmail,
+            role: 'Member',
+            balance: 0,
+          };
+          members.push(newMember);
+
+          const now = new Date().toISOString();
+          await env.DB.prepare(
+            'UPDATE groups SET members_json = ?, updated_at = ? WHERE id = ?'
+          ).bind(JSON.stringify(members), now, groupRow.id).run();
+
+          return jsonResponse({
+            success: true,
+            message: `Successfully joined ${groupRow.name}!`,
+            group: {
+              ...groupRow,
+              members,
+              inviteCode: groupRow.invite_code,
+              imageUrl: groupRow.image_url,
+              totalSpent: groupRow.total_spent,
+              unsettledAmount: groupRow.unsettled_amount,
+            },
+          }, 200);
+        } catch (err: any) {
+          console.error('[Squad Join Error]', err);
+          return jsonResponse({ success: false, error: err?.message || 'Failed to join squad.' }, 500);
         }
       }
 
@@ -1087,6 +1255,10 @@ export default {
         const processedMutationIds: string[] = [];
         const failedMutations: { mutationId: string; error: string }[] = [];
 
+        const authHeader = request.headers.get('Authorization') || '';
+        const headerUserId = (request.headers.get('X-User-Id') || '').trim();
+        const callerUserId = headerUserId || (authHeader.startsWith('Bearer usr_') ? authHeader.substring(7).trim() : body.userId);
+
         for (const mut of body.mutations) {
           try {
             // Check if already processed (Idempotency)
@@ -1173,6 +1345,24 @@ export default {
                   )
                   .run();
               } else if (mut.operation === 'DELETE') {
+                if (callerUserId && !callerUserId.startsWith('adm_')) {
+                  const existingExp: any = await env.DB.prepare('SELECT paid_by_user_id, created_by, group_id FROM expenses WHERE id = ?').bind(mut.entityId).first();
+                  if (existingExp && existingExp.paid_by_user_id !== callerUserId && existingExp.created_by !== callerUserId) {
+                    let isAllowed = false;
+                    if (existingExp.group_id) {
+                      const grpRow: any = await env.DB.prepare('SELECT members_json FROM groups WHERE id = ?').bind(existingExp.group_id).first();
+                      if (grpRow?.members_json) {
+                        try {
+                          const mems = JSON.parse(grpRow.members_json);
+                          isAllowed = mems.some((m: any) => m.id === callerUserId);
+                        } catch {}
+                      }
+                    }
+                    if (!isAllowed) {
+                      throw new Error('Forbidden: Cannot delete another user expense without squad membership.');
+                    }
+                  }
+                }
                 await env.DB.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE id = ?')
                   .bind(now, now, mut.entityId)
                   .run();
@@ -1301,6 +1491,9 @@ export default {
             } else if (mut.entityType === 'registeredUser') {
               const usr = mut.payload;
               if (mut.operation === 'CREATE' || mut.operation === 'UPDATE') {
+                if (callerUserId && usr.id && callerUserId !== usr.id && !callerUserId.startsWith('adm_')) {
+                  throw new Error('Forbidden: Cannot modify another user profile via sync push.');
+                }
                 const userStatus = usr.status === 'Disabled' ? 'Disabled' : 'Active';
                 const userRoleTitle = usr.roleTitle || usr.title || 'Financial Member';
                 const cleanEmail = (usr.email || '').trim().toLowerCase();
@@ -1392,6 +1585,9 @@ export default {
                 }
               } else if (mut.operation === 'DELETE') {
                 const userId = mut.entityId;
+                if (callerUserId && userId && callerUserId !== userId && !callerUserId.startsWith('adm_')) {
+                  throw new Error('Forbidden: Cannot delete another user account via sync push.');
+                }
                 const userRow: any = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(userId).first();
                 const cleanEmail = (mut.payload?.email || userRow?.email || '').trim().toLowerCase();
 
@@ -1500,6 +1696,39 @@ export default {
           ? new Date(Math.max(0, new Date(rawSince).getTime() - 10000)).toISOString()
           : null;
 
+        const authHeader = request.headers.get('Authorization') || '';
+        const headerUserId = (request.headers.get('X-User-Id') || '').trim();
+        const headerUserEmail = (request.headers.get('X-User-Email') || '').trim().toLowerCase();
+        const queryUserId = (url.searchParams.get('userId') || '').trim();
+        const queryEmail = (url.searchParams.get('email') || '').trim().toLowerCase();
+
+        let reqUserId = headerUserId || queryUserId;
+        if (!reqUserId && authHeader.startsWith('Bearer usr_')) {
+          reqUserId = authHeader.substring(7).trim();
+        }
+        const reqEmail = headerUserEmail || queryEmail;
+
+        const isAdmin =
+          authHeader === 'Bearer Admin@Tallix2026!' ||
+          authHeader.includes('Admin@Tallix2026!') ||
+          (reqEmail === 'abdulatiflemon@gmail.com' && authHeader.length > 5);
+
+        // Security: Anonymous unauthenticated requests receive empty sets
+        if (!reqUserId && !reqEmail && !isAdmin) {
+          return jsonResponse({
+            success: true,
+            serverTimestamp: now,
+            expenses: [],
+            groups: [],
+            settlements: [],
+            registeredUsers: [],
+            deletedExpenseIds: [],
+            deletedGroupIds: [],
+            deletedSettlementIds: [],
+            deletedUserIds: [],
+          });
+        }
+
         const expensesStmt = since
           ? env.DB.prepare('SELECT * FROM expenses WHERE updated_at >= ?').bind(since)
           : env.DB.prepare('SELECT * FROM expenses');
@@ -1523,9 +1752,57 @@ export default {
           usersStmt.all(),
         ]);
 
+        // Isolate squads user belongs to
+        const userSquads = (groupsRes.results || []).filter((row: any) => {
+          if (isAdmin) return true;
+          if (row.deleted_at) return true;
+          try {
+            const mems = row.members_json ? JSON.parse(row.members_json) : [];
+            return mems.some((m: any) =>
+              (reqUserId && m.id === reqUserId) ||
+              (reqEmail && (m.email || '').toLowerCase() === reqEmail)
+            );
+          } catch {
+            return false;
+          }
+        });
+        const userSquadIds = new Set<string>(userSquads.map((g: any) => g.id));
+
+        const targetExpenses = (expensesRes.results || []).filter((row: any) => {
+          if (isAdmin) return true;
+          if (row.deleted_at) return true;
+          if (reqUserId && (row.paid_by_user_id === reqUserId || row.created_by === reqUserId)) return true;
+          if (reqEmail && (row.created_by_email || '').toLowerCase() === reqEmail) return true;
+          if (row.group_id && userSquadIds.has(row.group_id)) return true;
+          return false;
+        });
+
+        const targetSettlements = (settlementsRes.results || []).filter((row: any) => {
+          if (isAdmin) return true;
+          if (row.deleted_at) return true;
+          if (reqUserId && (row.from_user_id === reqUserId || row.to_user_id === reqUserId)) return true;
+          if (row.group_id && userSquadIds.has(row.group_id)) return true;
+          return false;
+        });
+
+        const allowedUserIds = new Set<string>();
+        if (reqUserId) allowedUserIds.add(reqUserId);
+        userSquads.forEach((g: any) => {
+          try {
+            const mems = g.members_json ? JSON.parse(g.members_json) : [];
+            mems.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
+          } catch {}
+        });
+        const targetUsers = (usersRes.results || []).filter((u: any) => {
+          if (isAdmin) return true;
+          if (reqUserId && u.id === reqUserId) return true;
+          if (reqEmail && (u.email || '').toLowerCase() === reqEmail) return true;
+          return allowedUserIds.has(u.id);
+        });
+
         const activeExpenses: any[] = [];
         const deletedExpenseIds: string[] = [];
-        (expensesRes.results || []).forEach((row: any) => {
+        targetExpenses.forEach((row: any) => {
           if (row.deleted_at) {
             deletedExpenseIds.push(row.id);
           } else {
@@ -1560,7 +1837,7 @@ export default {
 
         const activeGroups: any[] = [];
         const deletedGroupIds: string[] = [];
-        (groupsRes.results || []).forEach((row: any) => {
+        userSquads.forEach((row: any) => {
           if (row.deleted_at) {
             deletedGroupIds.push(row.id);
           } else {
@@ -1577,7 +1854,7 @@ export default {
 
         const activeSettlements: any[] = [];
         const deletedSettlementIds: string[] = [];
-        (settlementsRes.results || []).forEach((row: any) => {
+        targetSettlements.forEach((row: any) => {
           if (row.deleted_at) {
             deletedSettlementIds.push(row.id);
           } else {
@@ -1594,7 +1871,7 @@ export default {
           }
         });
 
-        const activeUsers: any[] = (usersRes.results || []).map((row: any) => ({
+        const activeUsers: any[] = targetUsers.map((row: any) => ({
           id: row.id,
           name: row.name,
           email: row.email,
@@ -1648,6 +1925,7 @@ export default {
 
       // 5. Static Assets & SPA fallback for all non-API paths (SPA routes, CSS, JS, images)
       if (!url.pathname.startsWith('/api/') && env.ASSETS) {
+        const googleClientId = resolveGoogleClientId(env);
         const assetRes = await env.ASSETS.fetch(request);
         // If the path is not a file with extension (e.g. /dashboard, /transactions, /analytics, /groups/xyz)
         // and returns 404, fallback to index.html for SPA client-side routing
@@ -1655,11 +1933,27 @@ export default {
           const spaReqHtml = new Request(new URL('/index.html', request.url), request);
           const spaResHtml = await env.ASSETS.fetch(spaReqHtml);
           if (spaResHtml.status === 200) {
+            if (googleClientId && spaResHtml.headers.get('content-type')?.includes('text/html')) {
+              const html = await spaResHtml.text();
+              const injected = injectEnvIntoHtml(html, googleClientId);
+              const headers = new Headers(spaResHtml.headers);
+              headers.delete('content-length');
+              return new Response(injected, { status: 200, headers });
+            }
             return spaResHtml;
           }
           const spaReq = new Request(new URL('/', request.url), request);
           return await env.ASSETS.fetch(spaReq);
         }
+
+        if (googleClientId && (url.pathname === '/index.html' || url.pathname === '/') && assetRes.status === 200 && assetRes.headers.get('content-type')?.includes('text/html')) {
+          const html = await assetRes.text();
+          const injected = injectEnvIntoHtml(html, googleClientId);
+          const headers = new Headers(assetRes.headers);
+          headers.delete('content-length');
+          return new Response(injected, { status: 200, headers });
+        }
+
         return assetRes;
       }
 

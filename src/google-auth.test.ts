@@ -48,6 +48,10 @@ describe('Google Authentication & Identity Architecture for Tallix', () => {
     localStorage.clear();
     sessionStorage.clear();
     syncEngine.setUserId(null);
+    delete (globalThis as any).__TALLIX_ENV__;
+    delete (globalThis as any).__ENV__;
+    const { _resetCachedGoogleClientIdForTests } = await import('./services/apiConfig');
+    _resetCachedGoogleClientIdForTests();
     vi.restoreAllMocks();
   });
 
@@ -291,7 +295,7 @@ describe('Google Authentication & Identity Architecture for Tallix', () => {
       currency: 'BDT',
       date: '2026-09-28',
       category: 'Food',
-      status: 'Completed',
+      status: 'Settled',
       paymentMethod: 'Cash',
       isShared: false,
       paidByUserId: userId,
@@ -305,6 +309,8 @@ describe('Google Authentication & Identity Architecture for Tallix', () => {
       description: 'Squad expenses',
       category: 'Trip',
       currency: 'BDT',
+      avatarGradient: 'from-blue-600 to-indigo-600',
+      inviteCode: 'SQUAD123',
       members: [{ id: userId, name: 'Data Holder', email: userEmail, role: 'Admin', balance: 0 }],
       totalSpent: 0,
       unsettledAmount: 0,
@@ -435,5 +441,71 @@ describe('Google Authentication & Identity Architecture for Tallix', () => {
     // Empty token returns null
     const empty = await verifyGoogleToken('');
     expect(empty).toBeNull();
+  });
+
+  it('12. Resolves Google Client ID dynamically from /api/auth/config when set in Cloudflare Worker', async () => {
+    const { fetchGoogleClientId } = await import('./services/apiConfig');
+    
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
+      const url = input.toString();
+      if (url.includes('/api/auth/config')) {
+        return new Response(
+          JSON.stringify({
+            googleClientId: 'worker-dynamic-id.apps.googleusercontent.com',
+            configured: true,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    const resolved = await fetchGoogleClientId();
+    expect(resolved).toBe('worker-dynamic-id.apps.googleusercontent.com');
+  });
+
+  it('13. Strips surrounding quotes from Google Client ID if present in environment', async () => {
+    const { fetchGoogleClientId } = await import('./services/apiConfig');
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
+      const url = input.toString();
+      if (url.includes('/api/auth/config')) {
+        return new Response(
+          JSON.stringify({
+            googleClientId: '"quoted-client-id.apps.googleusercontent.com"',
+            configured: true,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+
+    const resolved = await fetchGoogleClientId();
+    expect(resolved).not.toContain('"');
+  });
+
+  it('14. getGoogleClientIdSync reads from window.__TALLIX_ENV__ injected at edge', async () => {
+    const { getGoogleClientIdSync } = await import('./services/apiConfig');
+    (globalThis as any).__TALLIX_ENV__ = {
+      VITE_GOOGLE_CLIENT_ID: 'edge-injected-id.apps.googleusercontent.com',
+    };
+
+    const syncId = getGoogleClientIdSync();
+    expect(syncId).toBe('edge-injected-id.apps.googleusercontent.com');
+
+    delete (globalThis as any).__TALLIX_ENV__;
+  });
+
+  it('15. getGoogleClientIdSync reads from window.__ENV__ or window.__TALLIX_CONFIG__', async () => {
+    const { getGoogleClientIdSync } = await import('./services/apiConfig');
+    (globalThis as any).__ENV__ = {
+      VITE_GOOGLE_CLIENT_ID: 'window-env-id.apps.googleusercontent.com',
+    };
+
+    const syncId = getGoogleClientIdSync();
+    expect(syncId).toBe('window-env-id.apps.googleusercontent.com');
+
+    delete (globalThis as any).__ENV__;
   });
 });
