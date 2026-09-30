@@ -362,7 +362,9 @@ export async function loginUserViaGoogle(token: string, isAccessToken = false): 
     };
 
     // Cache the authoritative user in local IndexedDB for subsequent offline access
+    const existing = await idbGet<RegisteredUser>(STORES.USERS, authUser.id);
     const registeredUserRecord: RegisteredUser = {
+      ...(existing || {}),
       id: authUser.id,
       name: authUser.name,
       email: authUser.email,
@@ -377,6 +379,7 @@ export async function loginUserViaGoogle(token: string, isAccessToken = false): 
       status: authUser.status || 'Active',
       isVerified: true,
       updatedAt: authUser.updatedAt || new Date().toISOString(),
+      password: existing?.password,
     };
 
     try {

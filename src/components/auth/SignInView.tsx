@@ -100,6 +100,8 @@ export const SignInView: React.FC<SignInViewProps> = ({
         setErrors({ email: 'No account found. Please create an account first.' });
       } else if (lower.includes('disabled')) {
         setErrors({ general: 'This user account has been disabled. Please contact the administrator.' });
+      } else if (lower.includes('google sign-in') || lower.includes('sign in with google')) {
+        setErrors({ general: errorMsg });
       } else if (lower.includes('invalid email or password')) {
         setErrors({ password: 'Invalid email or password. Please try again.' });
       } else {

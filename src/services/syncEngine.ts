@@ -10,6 +10,7 @@ import {
 } from './syncQueue';
 import {
   STORES,
+  idbGet,
   idbPut,
   idbDelete,
   idbGetMetadata,
@@ -18,6 +19,7 @@ import {
 import { SyncStatusInfo, SyncState, SyncPushResponse, SyncPullResponse } from './syncTypes';
 import { getClientDeviceId } from './idGenerator';
 import { buildApiUrl } from './apiConfig';
+import { RegisteredUser } from '../types';
 
 const ACTIVE_POLL_INTERVAL_MS = 60000; // 60s active polling while tab is visible
 
@@ -419,9 +421,17 @@ export class SyncEngine {
         const pushController = new AbortController();
         const pushTimeout = setTimeout(() => pushController.abort(), 12000);
 
+        const pushHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (this.currentUserId && this.currentUserId !== 'anonymous') {
+          pushHeaders['Authorization'] = `Bearer ${this.currentUserId}`;
+          pushHeaders['X-User-Id'] = this.currentUserId;
+        }
+
         const pushRes = await fetch(pushUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: pushHeaders,
           body: JSON.stringify(pushPayload),
           signal: pushController.signal,
         });
@@ -460,9 +470,17 @@ export class SyncEngine {
       const pullController = new AbortController();
       const pullTimeout = setTimeout(() => pullController.abort(), 12000);
 
+      const pullHeaders: Record<string, string> = {
+        'Cache-Control': 'no-cache',
+      };
+      if (this.currentUserId && this.currentUserId !== 'anonymous') {
+        pullHeaders['Authorization'] = `Bearer ${this.currentUserId}`;
+        pullHeaders['X-User-Id'] = this.currentUserId;
+      }
+
       const pullRes = await fetch(pullUrl, {
         method: 'GET',
-        headers: { 'Cache-Control': 'no-cache' },
+        headers: pullHeaders,
         signal: pullController.signal,
       });
       clearTimeout(pullTimeout);
@@ -528,10 +546,15 @@ export class SyncEngine {
           }
         }
 
-        // Merge registered users
+        // Merge registered users (preserving local password/credentials cache for offline resilience)
         if (pullData.registeredUsers && pullData.registeredUsers.length > 0) {
           for (const u of pullData.registeredUsers) {
-            await idbPut(STORES.USERS, u);
+            const existingUser = await idbGet<RegisteredUser>(STORES.USERS, u.id);
+            await idbPut(STORES.USERS, {
+              ...existingUser,
+              ...u,
+              password: existingUser?.password ?? u.password,
+            });
             hasLocalUpdates = true;
           }
         }

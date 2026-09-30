@@ -59,6 +59,7 @@ interface SharedGroupsViewProps {
   onRejectSettlement?: (settlementId: string) => void;
   onEditPendingSettlement?: (settlement: Settlement) => void;
   onDeletePendingSettlement?: (settlementId: string) => void;
+  onDeleteSettlement?: (settlementId: string) => void;
 }
 
 const MEMBER_LINE_COLORS = [
@@ -92,6 +93,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   onRejectSettlement,
   onEditPendingSettlement,
   onDeletePendingSettlement,
+  onDeleteSettlement,
 }) => {
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
   const [squadToDelete, setSquadToDelete] = useState<Group | null>(null);
@@ -107,6 +109,19 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   }, [toastMessage]);
 
   const { t, formatCurrency, formatNumber, formatDate } = useLanguage();
+
+  const isRequesterForSettlement = (stl: Settlement) => {
+    if (currentUser?.systemRole === 'Admin') return true;
+    if (!currentUser) return false;
+    if (stl.requestedByUserId && stl.requestedByUserId === currentUser.id) return true;
+    if (stl.createdBy && stl.createdBy === currentUser.id) return true;
+
+    const userMember = currentUserMember || { id: currentUser.id, name: currentUser.name, email: currentUser.email };
+    if (stl.settlementType === 'SETTLE_DOWN') {
+      return isMemberMatch(userMember, stl.toUserId, stl.toUserName) || stl.toUserId === currentUser.id;
+    }
+    return isMemberMatch(userMember, stl.fromUserId, stl.fromUserName) || stl.fromUserId === currentUser.id;
+  };
 
   const handleCopyInvite = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -601,15 +616,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                       ? isMemberMatch(currentUserMember, stl.fromUserId, stl.fromUserName)
                       : isMemberMatch(currentUserMember, stl.toUserId, stl.toUserName));
 
-                  const isRequester = Boolean(
-                    (stl.requestedByUserId && currentUser && stl.requestedByUserId === currentUser.id) ||
-                    (stl.createdBy && currentUser && stl.createdBy === currentUser.id) ||
-                    (currentUserMember && (
-                      stl.settlementType === 'SETTLE_DOWN'
-                        ? isMemberMatch(currentUserMember, stl.toUserId, stl.toUserName)
-                        : isMemberMatch(currentUserMember, stl.fromUserId, stl.fromUserName)
-                    ))
-                  );
+                  const isRequester = isRequesterForSettlement(stl);
 
                   return (
                     <div
@@ -1079,6 +1086,8 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                       const isAccepted = stl.status === 'Accepted' || stl.status === 'Completed';
                       const isRejected = stl.status === 'Rejected';
                       const isPending = stl.status === 'Pending' || stl.status === 'Pending Approval';
+                      const isCancelled = stl.status === 'Cancelled';
+                      const isRequester = isRequesterForSettlement(stl);
                       const isUp = stl.settlementType === 'SETTLE_UP' || (currentUser && isMemberMatch({ id: currentUser.id, name: currentUser.name }, stl.fromUserId, stl.fromUserName));
 
                       return (
@@ -1115,7 +1124,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0">
                             {isAccepted && (
                               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full font-mono">
                                 <CheckCircle className="w-3.5 h-3.5" /> {t('accepted')}
@@ -1130,6 +1139,21 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full font-mono">
                                 <Clock className="w-3.5 h-3.5" /> {t('pending')}
                               </span>
+                            )}
+                            {isCancelled && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-400 bg-zinc-500/10 border border-zinc-500/20 px-2.5 py-1 rounded-full font-mono">
+                                <XCircle className="w-3.5 h-3.5" /> Cancelled
+                              </span>
+                            )}
+                            {isRequester && (
+                              <button
+                                onClick={() => setSettlementToDelete(stl)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer border border-rose-500/30"
+                                title="Delete Settlement"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
                             )}
                           </div>
                         </div>
@@ -1180,7 +1204,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
         </div>
       )}
 
-      {/* Delete Pending Settlement Confirmation Modal */}
+      {/* Delete Settlement Confirmation Modal */}
       {settlementToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in duration-150">
@@ -1189,13 +1213,43 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                 <AlertTriangle className="w-5 h-5 text-rose-500" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-[#fafafa]">Delete this pending settlement request?</h3>
-                <p className="text-xs text-[#a1a1aa]">This action removes the pending claim without modifying squad balances.</p>
+                <h3 className="text-base font-bold text-[#fafafa]">Delete this settlement?</h3>
+                <p className="text-xs text-[#a1a1aa]">
+                  This settlement will be removed from your settlement history and its balance effect will be reversed.
+                </p>
+              </div>
+            </div>
+
+            {/* Settlement Details summary card matching Tallix design system */}
+            <div className="p-3.5 bg-[#09090b] rounded-lg border border-[#27272a] space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center text-white">
+                <span className="text-[#a1a1aa]">Settlement</span>
+                <span className="font-bold text-amber-400 text-sm">{formatCurrency(settlementToDelete.amount)}</span>
+              </div>
+              <div className="flex justify-between items-center text-[#a1a1aa]">
+                <span>Type</span>
+                <span className="text-white font-medium">
+                  {settlementToDelete.settlementType === 'SETTLE_DOWN' ? 'Settle Down' : 'Settle Up'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[#a1a1aa]">
+                <span>Status</span>
+                <span className={
+                  settlementToDelete.status === 'Accepted' || settlementToDelete.status === 'Completed'
+                    ? 'text-emerald-400 font-semibold'
+                    : settlementToDelete.status === 'Pending'
+                    ? 'text-amber-400 font-semibold'
+                    : 'text-zinc-400 font-semibold'
+                }>
+                  {settlementToDelete.status}
+                </span>
               </div>
             </div>
 
             <p className="text-xs text-[#a1a1aa] leading-relaxed">
-              Are you sure you want to cancel and delete this pending request of <strong className="text-white font-mono">{formatCurrency(settlementToDelete.amount)}</strong>? This will not affect any expense totals, splits, or balances.
+              {settlementToDelete.status === 'Accepted' || settlementToDelete.status === 'Completed'
+                ? `Are you sure you want to delete this accepted settlement? This settlement will be removed from your settlement history and its balance effect will be reversed.`
+                : `Are you sure you want to delete this settlement? This settlement will be removed from your settlement history.`}
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#27272a]">
@@ -1204,17 +1258,19 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
                 onClick={() => setSettlementToDelete(null)}
                 className="px-4 py-2 text-xs font-semibold bg-[#27272a] hover:bg-[#3f3f46] text-[#fafafa] rounded-lg transition-colors cursor-pointer"
               >
-                {t('cancel')}
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
                   const id = settlementToDelete.id;
                   setSettlementToDelete(null);
-                  if (onDeletePendingSettlement) {
+                  if (onDeleteSettlement) {
+                    onDeleteSettlement(id);
+                  } else if (onDeletePendingSettlement) {
                     onDeletePendingSettlement(id);
                   }
-                  setToastMessage('Pending settlement request deleted successfully.');
+                  setToastMessage('Settlement deleted successfully.');
                 }}
                 className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-rose-600/20"
               >

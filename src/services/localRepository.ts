@@ -353,14 +353,23 @@ export class LocalRepository {
     return cancelledRecord;
   }
 
-  public static async deleteSettlement(settlementId: string, userId: string): Promise<void> {
+  public static async deleteSettlement(settlementId: string, userId: string, target?: Settlement): Promise<void> {
+    const existing = target || await idbGet<Settlement>(STORES.SETTLEMENTS, settlementId);
     await idbDelete(STORES.SETTLEMENTS, settlementId);
 
     await enqueueMutation({
       entityType: 'settlement',
       entityId: settlementId,
       operation: 'DELETE',
-      payload: { id: settlementId },
+      payload: {
+        id: settlementId,
+        groupId: existing?.groupId,
+        fromUserId: existing?.fromUserId,
+        toUserId: existing?.toUserId,
+        settlementType: existing?.settlementType,
+        requestedByUserId: existing?.requestedByUserId,
+        createdBy: existing?.createdBy,
+      },
       userId,
     });
 

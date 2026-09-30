@@ -49,6 +49,7 @@ import { LocalRepository } from './services/localRepository';
 import { generateEntityId } from './services/idGenerator';
 import { syncEngine } from './services/syncEngine';
 import { updateUserProfile, fetchUserProfileFromD1, adminDeleteUser, deleteUserAccount } from './services/authService';
+import { buildApiUrl } from './services/apiConfig';
 import { toPaisa, parseExactMoney, splitExactAmount } from './utils/money';
 import {
   getCurrentMonthKey,
@@ -1628,33 +1629,48 @@ export default function App() {
     setIsSettleUpOpen(true);
   };
 
-  const handleDeletePendingSettlement = async (settlementId: string) => {
+  const handleDeleteSettlement = async (settlementId: string) => {
     const target = (isGuestSession ? guestSettlements : settlements).find((s) => s.id === settlementId);
     if (!target) return;
 
-    const cancelledRecord: Settlement = {
-      ...target,
-      status: 'Cancelled',
-    };
+    // Check authorization: caller must be creator/requester or Admin
+    const isSettleDown = target.settlementType === 'SETTLE_DOWN';
+    const requesterId = target.requestedByUserId || target.createdBy || (isSettleDown ? target.toUserId : target.fromUserId);
+    const recipientId = isSettleDown ? target.toUserId : target.fromUserId;
+
+    if (activeUser.systemRole !== 'Admin') {
+      if (activeUser.id === recipientId && activeUser.id !== requesterId) {
+        console.warn("Forbidden: Recipient cannot delete another user's settlement.");
+        return;
+      }
+      if (activeUser.id !== requesterId) {
+        console.warn('Forbidden: Only the settlement requester/creator can delete this settlement.');
+        return;
+      }
+    }
 
     if (isGuestSession) {
-      setGuestSettlements((prev) => prev.map((s) => (s.id === settlementId ? cancelledRecord : s)));
+      setGuestSettlements((prev) => prev.filter((s) => s.id !== settlementId));
       return;
     }
 
-    await LocalRepository.cancelSettlement(target, user.id);
-    setSettlements((prev) => prev.map((s) => (s.id === settlementId ? cancelledRecord : s)));
+    await LocalRepository.deleteSettlement(settlementId, activeUser.id, target);
+    setSettlements((prev) => prev.filter((s) => s.id !== settlementId));
 
     setAuditLogs((prev) => [
       {
         id: `log_${Date.now()}`,
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: `Pending settlement cancelled: ID ${settlementId}`,
+        message: `Settlement deleted: ID ${settlementId}`,
         source: 'settlement-engine',
       },
       ...prev,
     ]);
+  };
+
+  const handleDeletePendingSettlement = async (settlementId: string) => {
+    return handleDeleteSettlement(settlementId);
   };
 
   const handleSettleUp = (settlementData: Settlement | any) => {
@@ -1952,7 +1968,8 @@ export default function App() {
               onAcceptSettlement={handleAcceptSettlement}
               onRejectSettlement={handleRejectSettlement}
               onEditPendingSettlement={handleEditPendingSettlement}
-              onDeletePendingSettlement={handleDeletePendingSettlement}
+              onDeletePendingSettlement={handleDeleteSettlement}
+              onDeleteSettlement={handleDeleteSettlement}
             />
           )}
 
