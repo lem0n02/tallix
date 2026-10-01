@@ -7,9 +7,23 @@ import { FIXED_ADMIN_EMAIL, FIXED_ADMIN_PASSWORD } from '../config/fixedAdminAut
  * If empty or running on the same host (such as deployed Cloudflare Worker with Assets),
  * returns an empty base string so requests route to same-origin /api/*.
  */
+export const PRODUCTION_WORKER_URL = 'https://tallix-worker.dailybok.workers.dev';
+
 export const getWorkerApiUrl = (): string => {
   const envUrl = (import.meta.env.VITE_WORKER_URL || '').trim().replace(/\/$/, '');
-  return envUrl;
+  if (envUrl) return envUrl;
+
+  // When running directly on the deployed Cloudflare Worker with Assets,
+  // relative path '/api/*' is fastest and same-origin.
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.hostname.includes('workers.dev')) {
+      return '';
+    }
+    // Running in preview environments, development, or external origins:
+    // Route to authoritative Cloudflare Worker so D1 database is used.
+    return PRODUCTION_WORKER_URL;
+  }
+  return PRODUCTION_WORKER_URL;
 };
 
 /**

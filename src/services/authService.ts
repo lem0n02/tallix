@@ -2,7 +2,7 @@
 import { RegisteredUser, UserProfile } from '../types';
 import { buildApiUrl, getAdminAuthHeaders } from './apiConfig';
 import { LocalRepository } from './localRepository';
-import { idbPut, idbGet, STORES } from './indexedDB';
+import { idbPut, idbGet, idbGetAll, idbDelete, STORES } from './indexedDB';
 
 export interface RegisterUserInput {
   id?: string;
@@ -233,6 +233,12 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
     };
 
     try {
+      const allUsers = await idbGetAll<RegisteredUser>(STORES.USERS);
+      for (const u of allUsers) {
+        if (u.email?.toLowerCase() === cleanEmail && u.id !== authUser.id) {
+          await idbDelete(STORES.USERS, u.id);
+        }
+      }
       await idbPut(STORES.USERS, registeredUserRecord);
     } catch (cacheErr) {
       console.warn('[AuthService] Could not cache login record locally:', cacheErr);
@@ -362,7 +368,12 @@ export async function loginUserViaGoogle(token: string, isAccessToken = false): 
     };
 
     // Cache the authoritative user in local IndexedDB for subsequent offline access
-    const existing = await idbGet<RegisteredUser>(STORES.USERS, authUser.id);
+    let existing = await idbGet<RegisteredUser>(STORES.USERS, authUser.id);
+    if (!existing && authUser.email) {
+      const allLocal = await idbGetAll<RegisteredUser>(STORES.USERS);
+      existing = allLocal.find(u => u.email?.toLowerCase() === authUser.email?.toLowerCase());
+    }
+
     const registeredUserRecord: RegisteredUser = {
       ...(existing || {}),
       id: authUser.id,
@@ -383,6 +394,9 @@ export async function loginUserViaGoogle(token: string, isAccessToken = false): 
     };
 
     try {
+      if (existing && existing.id !== authUser.id) {
+        await idbDelete(STORES.USERS, existing.id);
+      }
       await idbPut(STORES.USERS, registeredUserRecord);
     } catch (cacheErr) {
       console.warn('[AuthService] Could not cache Google login record locally:', cacheErr);

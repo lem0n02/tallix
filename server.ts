@@ -255,7 +255,7 @@ async function startServer() {
   });
 
   // User Login Endpoint: POST /api/auth/login
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body || {};
 
@@ -278,6 +278,20 @@ async function startServer() {
       }
 
       if (!matchedUser) {
+        // Forward to authoritative Cloudflare Worker D1 backend if available
+        try {
+          const workerRes = await fetch("https://tallix-worker.dailybok.workers.dev/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, password }),
+          });
+          const workerData = await workerRes.json().catch(() => null);
+          if (workerData) {
+            return res.status(workerRes.status).json(workerData);
+          }
+        } catch {
+          // fallback to 404
+        }
         return res.status(404).json({ success: false, error: "No account found with this email address." });
       }
 

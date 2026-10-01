@@ -11,6 +11,7 @@ import {
 import {
   STORES,
   idbGet,
+  idbGetAll,
   idbPut,
   idbDelete,
   idbGetMetadata,
@@ -549,11 +550,27 @@ export class SyncEngine {
         // Merge registered users (preserving local password/credentials cache for offline resilience)
         if (pullData.registeredUsers && pullData.registeredUsers.length > 0) {
           for (const u of pullData.registeredUsers) {
-            const existingUser = await idbGet<RegisteredUser>(STORES.USERS, u.id);
+            let existingUser = await idbGet<RegisteredUser>(STORES.USERS, u.id);
+            if (!existingUser && u.email) {
+              const allUsers = await idbGetAll<RegisteredUser>(STORES.USERS);
+              existingUser = allUsers.find((x) => x.email?.toLowerCase() === u.email?.toLowerCase());
+            }
+
+            // CRITICAL REGRESSION PROTECTION:
+            // syncEngine must NEVER overwrite a locally cached user's password with undefined/null
+            // when the sanitized user record returned by /api/sync/pull does not contain password_hash.
+            // The merge must strictly preserve existingUser.password when the remote sync user does not provide a password.
+            const preservedPassword =
+              existingUser?.password && existingUser.password.trim() !== ''
+                ? existingUser.password
+                : (u.password && typeof u.password === 'string' && u.password.trim() !== '')
+                ? u.password
+                : undefined;
+
             await idbPut(STORES.USERS, {
               ...existingUser,
               ...u,
-              password: existingUser?.password ?? u.password,
+              password: preservedPassword,
             });
             hasLocalUpdates = true;
           }
