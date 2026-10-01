@@ -1091,17 +1091,37 @@ async function startServer() {
         return itemTime >= sinceTime;
       };
 
+      // Determine all squads the user belongs to across ALL existing groups
+      // to ensure delta expenses/settlements within existing squads are never dropped.
+      const userSquadIds = new Set<string>();
+      const allowedUserIds = new Set<string>();
+      if (reqUserId) allowedUserIds.add(reqUserId);
+
+      serverGroups.forEach((g) => {
+        if (isAdmin) {
+          userSquadIds.add(g.id);
+          const members = Array.isArray(g.members) ? g.members : [];
+          members.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
+          return;
+        }
+        if (g.deletedAt) return;
+        const members = Array.isArray(g.members) ? g.members : [];
+        const isMember = members.some((m: any) =>
+          (reqUserId && m.id === reqUserId) ||
+          (reqEmail && (m.email || "").toLowerCase() === reqEmail)
+        );
+        if (isMember) {
+          userSquadIds.add(g.id);
+          members.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
+        }
+      });
+
       const allGroups = Array.from(serverGroups.values()).filter(filterBySince);
       const userGroups = allGroups.filter((g) => {
         if (isAdmin) return true;
         if (g.deletedAt) return true;
-        const members = Array.isArray(g.members) ? g.members : [];
-        return members.some((m: any) =>
-          (reqUserId && m.id === reqUserId) ||
-          (reqEmail && (m.email || "").toLowerCase() === reqEmail)
-        );
+        return userSquadIds.has(g.id);
       });
-      const userSquadIds = new Set(userGroups.map((g) => g.id));
 
       const allExpenses = Array.from(serverExpenses.values()).filter(filterBySince);
       const userExpenses = allExpenses.filter((exp) => {
@@ -1120,13 +1140,6 @@ async function startServer() {
         if (reqUserId && (stl.fromUserId === reqUserId || stl.toUserId === reqUserId)) return true;
         if (stl.groupId && userSquadIds.has(stl.groupId)) return true;
         return false;
-      });
-
-      const allowedUserIds = new Set<string>();
-      if (reqUserId) allowedUserIds.add(reqUserId);
-      userGroups.forEach((g) => {
-        const mems = Array.isArray(g.members) ? g.members : [];
-        mems.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
       });
 
       const registeredUsers = Array.from(serverRegisteredUsers.values())

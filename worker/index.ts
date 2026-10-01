@@ -1827,20 +1827,53 @@ export default {
           });
         }
 
-        const expensesStmt = since
-          ? env.DB.prepare('SELECT * FROM expenses WHERE updated_at >= ?').bind(since)
+        // 30-second clock-skew and boundary safety window to prevent dropping records on boundary transitions
+        const safeSince = since ? new Date(new Date(since).getTime() - 30000).toISOString() : null;
+
+        // Retrieve all active squad memberships for the requesting user across ALL existing groups
+        // This ensures delta sync for expenses and settlements within existing squads is never dropped
+        // simply because the squad definition itself was not modified in the delta window.
+        const allSquadsRes = await env.DB.prepare('SELECT id, members_json FROM groups WHERE deleted_at IS NULL').all();
+        const userSquadIds = new Set<string>();
+        const allowedUserIds = new Set<string>();
+        if (reqUserId) allowedUserIds.add(reqUserId);
+
+        (allSquadsRes.results || []).forEach((row: any) => {
+          if (isAdmin) {
+            userSquadIds.add(row.id);
+            try {
+              const mems = row.members_json ? JSON.parse(row.members_json) : [];
+              mems.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
+            } catch {}
+            return;
+          }
+          try {
+            const mems = row.members_json ? JSON.parse(row.members_json) : [];
+            const isMember = mems.some((m: any) =>
+              (reqUserId && m.id === reqUserId) ||
+              (reqEmail && (m.email || '').toLowerCase() === reqEmail)
+            );
+            if (isMember) {
+              userSquadIds.add(row.id);
+              mems.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
+            }
+          } catch {}
+        });
+
+        const expensesStmt = safeSince
+          ? env.DB.prepare('SELECT * FROM expenses WHERE updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM expenses');
 
-        const groupsStmt = since
-          ? env.DB.prepare('SELECT * FROM groups WHERE updated_at >= ?').bind(since)
+        const groupsStmt = safeSince
+          ? env.DB.prepare('SELECT * FROM groups WHERE updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM groups');
 
-        const settlementsStmt = since
-          ? env.DB.prepare('SELECT * FROM settlements WHERE updated_at >= ?').bind(since)
+        const settlementsStmt = safeSince
+          ? env.DB.prepare('SELECT * FROM settlements WHERE updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM settlements');
 
-        const usersStmt = since
-          ? env.DB.prepare('SELECT * FROM users WHERE updated_at >= ?').bind(since)
+        const usersStmt = safeSince
+          ? env.DB.prepare('SELECT * FROM users WHERE updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM users');
 
         const [expensesRes, groupsRes, settlementsRes, usersRes] = await Promise.all([
@@ -1850,21 +1883,12 @@ export default {
           usersStmt.all(),
         ]);
 
-        // Isolate squads user belongs to
+        // Isolate squads user belongs to for groups delta response
         const userSquads = (groupsRes.results || []).filter((row: any) => {
           if (isAdmin) return true;
           if (row.deleted_at) return true;
-          try {
-            const mems = row.members_json ? JSON.parse(row.members_json) : [];
-            return mems.some((m: any) =>
-              (reqUserId && m.id === reqUserId) ||
-              (reqEmail && (m.email || '').toLowerCase() === reqEmail)
-            );
-          } catch {
-            return false;
-          }
+          return userSquadIds.has(row.id);
         });
-        const userSquadIds = new Set<string>(userSquads.map((g: any) => g.id));
 
         const targetExpenses = (expensesRes.results || []).filter((row: any) => {
           if (isAdmin) return true;
@@ -1883,14 +1907,6 @@ export default {
           return false;
         });
 
-        const allowedUserIds = new Set<string>();
-        if (reqUserId) allowedUserIds.add(reqUserId);
-        userSquads.forEach((g: any) => {
-          try {
-            const mems = g.members_json ? JSON.parse(g.members_json) : [];
-            mems.forEach((m: any) => { if (m.id) allowedUserIds.add(m.id); });
-          } catch {}
-        });
         const targetUsers = (usersRes.results || []).filter((u: any) => {
           if (isAdmin) return true;
           if (reqUserId && u.id === reqUserId) return true;

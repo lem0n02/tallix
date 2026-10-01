@@ -1,0 +1,26 @@
+[
+  {
+    "id": "del_usr_usr_goog_test_nullpw_1790712113474",
+    "entity_type": "user",
+    "entity_id": "usr_goog_test_nullpw",
+    "deleted_at": "2026-09-29T20:01:53.406Z"
+  },
+  {
+    "id": "del_stl_stl_1790743488530",
+    "entity_type": "settlement",
+    "entity_id": "stl_1790743488530",
+    "deleted_at": "2026-09-30T19:03:26.443Z"
+  },
+  {
+    "id": "del_stl_stl_1790743471116",
+    "entity_type": "settlement",
+    "entity_id": "stl_1790743471116",
+    "deleted_at": "2026-10-01T16:43:15.787Z"
+  },
+  {
+    "id": "del_stl_stl_1790883709654",
+    "entity_type": "settlement",
+    "entity_id": "stl_1790883709654",
+    "deleted_at": "2026-10-01T19:44:18.050Z"
+  }
+]
