@@ -273,7 +273,17 @@ export class LocalRepository {
 
   // --- Settlements ---
   public static async getAllSettlements(): Promise<Settlement[]> {
-    return idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    const list = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    return list.map((stl) => ({
+      ...stl,
+      groupId: stl.groupId || (stl as any).group_id,
+      groupName: stl.groupName || (stl as any).group_name,
+      fromUserId: stl.fromUserId || (stl as any).from_user_id,
+      fromUserName: stl.fromUserName || (stl as any).from_user_name,
+      toUserId: stl.toUserId || (stl as any).to_user_id,
+      toUserName: stl.toUserName || (stl as any).to_user_name,
+      paymentMethod: stl.paymentMethod || (stl as any).payment_method,
+    }));
   }
 
   public static async createSettlement(settlement: Settlement, userId: string): Promise<Settlement> {

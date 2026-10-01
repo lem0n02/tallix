@@ -548,12 +548,17 @@ export default function App() {
 
   const userSettlements = React.useMemo(() => {
     if (!activeUser || !activeUser.id) return [];
-    return activeSettlements.filter(
-      (s) =>
-        s.fromUserId === activeUser.id ||
-        s.toUserId === activeUser.id ||
-        (s.groupId && userGroupIds.has(s.groupId))
-    );
+    return activeSettlements.filter((s) => {
+      const gId = s.groupId || (s as any).group_id;
+      if (gId) {
+        // Authorized squad settlement: Every member of this squad must receive all squad settlements
+        return userGroupIds.has(gId);
+      }
+      // Direct personal peer-to-peer settlement (not in any squad)
+      const fromId = s.fromUserId || (s as any).from_user_id;
+      const toId = s.toUserId || (s as any).to_user_id;
+      return fromId === activeUser.id || toId === activeUser.id;
+    });
   }, [activeSettlements, activeUser, userGroupIds]);
 
   // Shared Month Filter State: Defaults to current month, preserved across page refresh in sessionStorage
@@ -942,6 +947,17 @@ export default function App() {
     setIsGuestSession(false);
     localStorage.setItem('tallix_auth', 'true');
     localStorage.setItem('tallix_user', JSON.stringify(authenticatedUser));
+
+    // Immediately synchronize local state from IndexedDB to avoid initial render race conditions
+    Promise.all([
+      LocalRepository.getAllSettlements(),
+      LocalRepository.getAllGroups(),
+      LocalRepository.getAllExpenses(),
+    ]).then(([stls, grps, exps]) => {
+      if (stls && stls.length > 0) setSettlements(stls);
+      if (grps && grps.length > 0) setGroups(grps);
+      if (exps && exps.length > 0) setExpenses(sanitizeExpenses(exps));
+    }).catch(() => {});
 
     // Ensure authenticated user is in registeredUsers state so local views immediately have access
     setRegisteredUsers((prev) => {

@@ -532,10 +532,25 @@ export class SyncEngine {
           }
         }
 
-        // Merge settlements
+        // Merge settlements with full normalization across camelCase and snake_case properties
         if (pullData.settlements && pullData.settlements.length > 0) {
           for (const stl of pullData.settlements) {
-            await idbPut(STORES.SETTLEMENTS, stl);
+            const origAmount = typeof stl.amount === 'number' ? stl.amount : (stl.originalAmount || 0);
+            const paisa = typeof stl.amount_paisa === 'number' ? stl.amount_paisa : Math.round(origAmount * 100);
+            const normalizedStl = {
+              ...stl,
+              groupId: stl.groupId || (stl as any).group_id,
+              groupName: stl.groupName || (stl as any).group_name,
+              fromUserId: stl.fromUserId || (stl as any).from_user_id,
+              fromUserName: stl.fromUserName || (stl as any).from_user_name,
+              toUserId: stl.toUserId || (stl as any).to_user_id,
+              toUserName: stl.toUserName || (stl as any).to_user_name,
+              paymentMethod: stl.paymentMethod || (stl as any).payment_method,
+              amount: origAmount,
+              originalAmount: origAmount,
+              amount_paisa: paisa,
+            };
+            await idbPut(STORES.SETTLEMENTS, normalizedStl);
             hasLocalUpdates = true;
           }
         }

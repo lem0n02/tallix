@@ -165,7 +165,7 @@ export const SharedGroupsView: React.FC<SharedGroupsViewProps> = ({
   const groupSettlements = useMemo(() => {
     if (!activeGroup) return [];
     return settlements
-      .filter((stl) => stl.groupId === activeGroup.id)
+      .filter((stl) => stl.groupId === activeGroup.id || (stl as any).group_id === activeGroup.id)
       .sort(compareHistoryItemsDesc);
   }, [settlements, activeGroup]);
 

@@ -1868,8 +1868,9 @@ export default {
           ? env.DB.prepare('SELECT * FROM groups WHERE updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM groups');
 
+        // All active squad settlements are preserved to prevent divergent member balances across delta sync
         const settlementsStmt = safeSince
-          ? env.DB.prepare('SELECT * FROM settlements WHERE updated_at >= ?').bind(safeSince)
+          ? env.DB.prepare('SELECT * FROM settlements WHERE deleted_at IS NULL OR updated_at >= ?').bind(safeSince)
           : env.DB.prepare('SELECT * FROM settlements');
 
         const usersStmt = safeSince
@@ -1902,9 +1903,15 @@ export default {
         const targetSettlements = (settlementsRes.results || []).filter((row: any) => {
           if (isAdmin) return true;
           if (row.deleted_at) return true;
-          if (reqUserId && (row.from_user_id === reqUserId || row.to_user_id === reqUserId)) return true;
-          if (row.group_id && userSquadIds.has(row.group_id)) return true;
-          return false;
+          const gId = row.group_id || row.groupId;
+          if (gId) {
+            // Authorized squad settlement: Every authorized member of this squad receives all squad settlements
+            return userSquadIds.has(gId);
+          }
+          // Direct personal peer-to-peer settlement (not attached to any squad)
+          const fromId = row.from_user_id || row.fromUserId;
+          const toId = row.to_user_id || row.toUserId;
+          return Boolean(reqUserId && (fromId === reqUserId || toId === reqUserId));
         });
 
         const targetUsers = (usersRes.results || []).filter((u: any) => {

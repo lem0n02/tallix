@@ -25,6 +25,7 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
     category: 'Food',
     currency: 'BDT',
     inviteCode: 'KHADDO26',
+    avatarGradient: 'from-amber-500 to-orange-500',
     members: khaddoMembers,
     totalSpent: 1931,
     unsettledAmount: 38.33,
@@ -99,6 +100,9 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
     const mockExpenses: Expense[] = [
       {
         id: 'exp_1',
+        title: 'Food 1',
+        merchant: 'Restaurant',
+        paymentMethod: 'Cash',
         groupId: khaddoGroupId,
         isShared: true,
         amount: 691,
@@ -107,7 +111,7 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
         currency: 'BDT',
         category: 'Food',
         date: '2026-09-27',
-        status: 'Completed',
+        status: 'Settled',
         createdAt: '2026-09-27',
         updatedAt: '2026-09-27',
         splits: [
@@ -118,6 +122,9 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
       },
       {
         id: 'exp_2',
+        title: 'Food 2',
+        merchant: 'Restaurant',
+        paymentMethod: 'Cash',
         groupId: khaddoGroupId,
         isShared: true,
         amount: 782,
@@ -126,7 +133,7 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
         currency: 'BDT',
         category: 'Food',
         date: '2026-09-28',
-        status: 'Completed',
+        status: 'Settled',
         createdAt: '2026-09-28',
         updatedAt: '2026-09-28',
         splits: [
@@ -137,6 +144,9 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
       },
       {
         id: 'exp_3',
+        title: 'Food 3',
+        merchant: 'Restaurant',
+        paymentMethod: 'Cash',
         groupId: khaddoGroupId,
         isShared: true,
         amount: 458,
@@ -145,7 +155,7 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
         currency: 'BDT',
         category: 'Food',
         date: '2026-09-29',
-        status: 'Completed',
+        status: 'Settled',
         createdAt: '2026-09-29',
         updatedAt: '2026-09-29',
         splits: [
@@ -216,4 +226,125 @@ describe('Squad Balance Reconciliation & Multi-Member Cross-Sync Suite', () => {
     expect(storedSettlements.length).toBe(2);
     expect(storedSettlements.some((s) => s.id === acceptedSettlement2.id)).toBe(true);
   });
+
+  it('3. Three members of the same group receive identical settlement datasets, while non-members receive none', async () => {
+    vi.spyOn(syncEngine, 'checkReachability').mockResolvedValue(true);
+
+    const outsideGroupId = 'grp_outside_999';
+    const outsideUserId = 'usr_outside_888';
+
+    // Mock multi-member database state
+    const allServerSettlements = [
+      acceptedSettlement1, // Lemon -> Shahid (100)
+      acceptedSettlement2, // Jack -> Lemon (160)
+      cancelledSettlement, // Lemon -> Jack (160)
+    ];
+
+    // Helper to simulate server-side /api/sync/pull filtering (parity between Worker and Node)
+    const simulateServerPull = (callerUserId: string) => {
+      // 1. Group membership check
+      const userSquads = new Set<string>();
+      if ([lemonId, shahidId, jackId].includes(callerUserId)) {
+        userSquads.add(khaddoGroupId);
+      }
+      if (callerUserId === outsideUserId) {
+        userSquads.add(outsideGroupId);
+      }
+
+      // 2. Settlement authorization
+      const targetSettlements = allServerSettlements.filter((stl) => {
+        const gId = stl.groupId || (stl as any).group_id;
+        if (gId) {
+          return userSquads.has(gId);
+        }
+        const fromId = stl.fromUserId || (stl as any).from_user_id;
+        const toId = stl.toUserId || (stl as any).to_user_id;
+        return Boolean(callerUserId && (fromId === callerUserId || toId === callerUserId));
+      });
+
+      return targetSettlements;
+    };
+
+    // Sync for Member A (Shahid)
+    await idbClear(STORES.SETTLEMENTS);
+    syncEngine.resetUserState();
+    syncEngine.setUserId(shahidId);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({
+        success: true,
+        serverTimestamp: '2026-10-01T20:00:00.000Z',
+        expenses: [],
+        groups: [khaddoGroup],
+        settlements: simulateServerPull(shahidId),
+        deletedSettlementIds: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await syncEngine.triggerSync();
+    const storedA = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    const setA = new Set(storedA.map((s) => s.id));
+
+    // Sync for Member B (Jack)
+    await idbClear(STORES.SETTLEMENTS);
+    syncEngine.resetUserState();
+    syncEngine.setUserId(jackId);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({
+        success: true,
+        serverTimestamp: '2026-10-01T20:00:00.000Z',
+        expenses: [],
+        groups: [khaddoGroup],
+        settlements: simulateServerPull(jackId),
+        deletedSettlementIds: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await syncEngine.triggerSync();
+    const storedB = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    const setB = new Set(storedB.map((s) => s.id));
+
+    // Sync for Member C (Lemon)
+    await idbClear(STORES.SETTLEMENTS);
+    syncEngine.resetUserState();
+    syncEngine.setUserId(lemonId);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({
+        success: true,
+        serverTimestamp: '2026-10-01T20:00:00.000Z',
+        expenses: [],
+        groups: [khaddoGroup],
+        settlements: simulateServerPull(lemonId),
+        deletedSettlementIds: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await syncEngine.triggerSync();
+    const storedC = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    const setC = new Set(storedC.map((s) => s.id));
+
+    // Assert: Set(settlementIdsA) == Set(settlementIdsB) == Set(settlementIdsC)
+    expect(setA).toEqual(setB);
+    expect(setB).toEqual(setC);
+    expect(setA.size).toBe(3);
+    expect(setA.has('stl_1790499889530')).toBe(true);
+    expect(setA.has('stl_1790504687839')).toBe(true);
+    expect(setA.has('stl_1790504857565')).toBe(true);
+
+    // Sync for Non-Member (outside user)
+    await idbClear(STORES.SETTLEMENTS);
+    syncEngine.resetUserState();
+    syncEngine.setUserId(outsideUserId);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({
+        success: true,
+        serverTimestamp: '2026-10-01T20:00:00.000Z',
+        expenses: [],
+        groups: [],
+        settlements: simulateServerPull(outsideUserId),
+        deletedSettlementIds: [],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await syncEngine.triggerSync();
+    const storedOutside = await idbGetAll<Settlement>(STORES.SETTLEMENTS);
+    // Non-member receives NONE of Khaddo settlements
+    expect(storedOutside.length).toBe(0);
+  });
 });
+

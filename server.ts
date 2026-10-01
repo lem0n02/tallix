@@ -3,6 +3,7 @@ dotenv.config();
 
 import express from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -51,6 +52,68 @@ async function startServer() {
   const deletedGroupIds = new Set<string>();
   const deletedSettlementIds = new Set<string>();
   const deletedUserIds = new Set<string>();
+
+  // Seed durable historical server state from backup to guarantee parity between Node server and Cloudflare D1
+  try {
+    const backupDir = path.join(process.cwd(), "backups", "backup_20261001_initial");
+    if (fs.existsSync(backupDir)) {
+      const loadJson = (filename: string) => {
+        const p = path.join(backupDir, filename);
+        return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : [];
+      };
+
+      const bUsers = loadJson("users.json");
+      bUsers.forEach((u: any) => serverRegisteredUsers.set(u.id, u));
+
+      const bGroups = loadJson("groups.json");
+      bGroups.forEach((g: any) => {
+        const mems = typeof g.members_json === "string" ? JSON.parse(g.members_json) : (g.members || []);
+        serverGroups.set(g.id, { ...g, members: mems, deletedAt: g.deleted_at || g.deletedAt || null });
+      });
+
+      const bExpenses = loadJson("expenses.json");
+      bExpenses.forEach((e: any) => {
+        const splits = typeof e.splits_json === "string" ? JSON.parse(e.splits_json) : (e.splits || []);
+        serverExpenses.set(e.id, {
+          ...e,
+          groupId: e.group_id || e.groupId,
+          paidByUserId: e.paid_by_user_id || e.paidByUserId,
+          paidByName: e.paid_by_name || e.paidByName,
+          splits,
+          deletedAt: e.deleted_at || e.deletedAt || null,
+        });
+      });
+
+      const bSettlements = loadJson("settlements.json");
+      bSettlements.forEach((s: any) => {
+        const origAmount = s.originalAmount !== undefined ? Number(s.originalAmount) : Number(s.amount);
+        const paisa = typeof s.amount_paisa === "number" ? s.amount_paisa : Math.round(origAmount * 100);
+        serverSettlements.set(s.id, {
+          ...s,
+          groupId: s.group_id || s.groupId,
+          fromUserId: s.from_user_id || s.fromUserId,
+          fromUserName: s.from_user_name || s.fromUserName,
+          toUserId: s.to_user_id || s.toUserId,
+          toUserName: s.to_user_name || s.toUserName,
+          paymentMethod: s.payment_method || s.paymentMethod,
+          amount: origAmount,
+          originalAmount: origAmount,
+          amount_paisa: paisa,
+          deletedAt: s.deleted_at || s.deletedAt || null,
+        });
+      });
+
+      const bDeleted = loadJson("deleted_entities.json");
+      bDeleted.forEach((d: any) => {
+        if (d.entity_type === "settlement") deletedSettlementIds.add(d.entity_id);
+        if (d.entity_type === "expense") deletedExpenseIds.add(d.entity_id);
+        if (d.entity_type === "group") deletedGroupIds.add(d.entity_id);
+        if (d.entity_type === "user") deletedUserIds.add(d.entity_id);
+      });
+    }
+  } catch (err) {
+    console.warn("[Server] Could not initialize server state from backup:", err);
+  }
 
   // Helper functions for True Permanent Deletion and Cascade Purge
   const purgeUserServerData = (userId: string, email?: string) => {
@@ -1133,13 +1196,25 @@ async function startServer() {
         return false;
       });
 
-      const allSettlements = Array.from(serverSettlements.values()).filter(filterBySince);
+      const allSettlements = Array.from(serverSettlements.values()).filter((stl) => {
+        if (!since) return true;
+        if (!stl.deletedAt) return true; // Active settlements are always preserved to prevent divergent member balances
+        const itemTime = new Date(stl.updatedAt || stl.createdAt || 0).getTime();
+        const sinceTime = new Date(since).getTime() - 10000;
+        return itemTime >= sinceTime;
+      });
       const userSettlements = allSettlements.filter((stl) => {
         if (isAdmin) return true;
         if (stl.deletedAt) return true;
-        if (reqUserId && (stl.fromUserId === reqUserId || stl.toUserId === reqUserId)) return true;
-        if (stl.groupId && userSquadIds.has(stl.groupId)) return true;
-        return false;
+        const gId = stl.groupId || stl.group_id;
+        if (gId) {
+          // Authorized squad settlement: Every authorized member of this squad receives all squad settlements
+          return userSquadIds.has(gId);
+        }
+        // Direct personal peer-to-peer settlement (not attached to any squad)
+        const fromId = stl.fromUserId || stl.from_user_id;
+        const toId = stl.toUserId || stl.to_user_id;
+        return Boolean(reqUserId && (fromId === reqUserId || toId === reqUserId));
       });
 
       const registeredUsers = Array.from(serverRegisteredUsers.values())
