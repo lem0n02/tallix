@@ -582,10 +582,17 @@ export class SyncEngine {
                 ? u.password
                 : undefined;
 
+            const preservedPasswordHash =
+              (existingUser as any)?.password_hash ||
+              (existingUser as any)?.passwordHash ||
+              (u as any)?.password_hash ||
+              (u as any)?.passwordHash;
+
             await idbPut(STORES.USERS, {
               ...existingUser,
               ...u,
               password: preservedPassword,
+              password_hash: preservedPasswordHash,
             });
             hasLocalUpdates = true;
           }

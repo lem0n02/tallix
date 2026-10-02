@@ -63,7 +63,12 @@ async function startServer() {
       };
 
       const bUsers = loadJson("users.json");
-      bUsers.forEach((u: any) => serverRegisteredUsers.set(u.id, u));
+      bUsers.forEach((u: any) =>
+        serverRegisteredUsers.set(u.id, {
+          ...u,
+          passwordHash: u.password_hash || u.passwordHash,
+        })
+      );
 
       const bGroups = loadJson("groups.json");
       bGroups.forEach((g: any) => {
@@ -363,17 +368,18 @@ async function startServer() {
       }
 
       const submittedHash = crypto.createHash("sha256").update(password).digest("hex");
-      if (!matchedUser.passwordHash && !matchedUser.password) {
+      const storedHash = matchedUser.passwordHash || matchedUser.password_hash;
+      if (!storedHash && !matchedUser.password) {
         return res.status(401).json({
           success: false,
-          error: "This account was registered using Google Sign-In. Please sign in with Google.",
+          error: "Google Sign-In is temporarily unavailable, and this account has no email/password credentials configured.",
         });
       }
 
-      if (matchedUser.passwordHash && matchedUser.passwordHash !== submittedHash) {
+      if (storedHash && storedHash !== submittedHash) {
         return res.status(401).json({ success: false, error: "Invalid email or password. Please try again." });
       }
-      if (matchedUser.password && !matchedUser.passwordHash && matchedUser.password !== password) {
+      if (matchedUser.password && !storedHash && matchedUser.password !== password) {
         return res.status(401).json({ success: false, error: "Invalid email or password. Please try again." });
       }
 

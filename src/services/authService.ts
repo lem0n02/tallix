@@ -32,6 +32,17 @@ export interface LoginResult {
 }
 
 /**
+ * Standard SHA-256 password hashing matching Cloudflare Worker and Node backends.
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Registers a new user into Cloudflare D1 with local IndexedDB caching and offline fallback.
  * Follows the flow:
  * Validate locally -> Call Cloudflare Worker /api/auth/register -> Persist in D1 -> Update local cache -> Continue login
@@ -154,10 +165,28 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
         error: 'This user account has been disabled. Please contact the administrator.',
       };
     }
-    if (localUser.password && localUser.password !== password) {
+    const localHash = (localUser as any).password_hash || (localUser as any).passwordHash;
+    if (!localUser.password && !localHash) {
+      return {
+        success: false,
+        error: 'Google Sign-In is temporarily unavailable, and this account has no email/password credentials configured.',
+        isOffline: true,
+      };
+    }
+    let isPasswordValid = false;
+    if (localUser.password && localUser.password === password) {
+      isPasswordValid = true;
+    } else if (localHash) {
+      const submittedHash = await hashPassword(password);
+      if (submittedHash === localHash) {
+        isPasswordValid = true;
+      }
+    }
+    if (!isPasswordValid) {
       return {
         success: false,
         error: 'Invalid email or password. Please try again.',
+        isOffline: true,
       };
     }
     const profile: UserProfile = {
@@ -213,12 +242,13 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
       monthlyBurnRate: authUser.monthlyBurnRate || 0,
     };
 
-    // Cache the authoritative user locally in IndexedDB
+    const userPwHash = await hashPassword(password);
     const registeredUserRecord: RegisteredUser = {
       id: authUser.id,
       name: authUser.name,
       email: authUser.email,
       password: password, // preserved in local device cache for offline credentials validation
+      password_hash: userPwHash,
       systemRole: authUser.systemRole || 'User',
       roleTitle: authUser.roleTitle || authUser.title || 'Financial Member',
       department: authUser.department || 'Personal Workspace',
@@ -262,7 +292,23 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
           error: 'This user account has been disabled. Please contact the administrator.',
         };
       }
-      if (localUser.password && localUser.password !== password) {
+      const localHash = (localUser as any).password_hash || (localUser as any).passwordHash;
+      if (!localUser.password && !localHash) {
+        return {
+          success: false,
+          error: 'Google Sign-In is temporarily unavailable, and this account has no email/password credentials configured.',
+        };
+      }
+      let isPasswordValid = false;
+      if (localUser.password && localUser.password === password) {
+        isPasswordValid = true;
+      } else if (localHash) {
+        const submittedHash = await hashPassword(password);
+        if (submittedHash === localHash) {
+          isPasswordValid = true;
+        }
+      }
+      if (!isPasswordValid) {
         return {
           success: false,
           error: 'Invalid email or password. Please try again.',

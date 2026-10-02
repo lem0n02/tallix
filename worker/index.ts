@@ -453,7 +453,7 @@ export default {
           if (!user.password_hash) {
             return jsonResponse({
               success: false,
-              error: 'This account was registered using Google Sign-In. Please sign in with Google.',
+              error: 'Google Sign-In is temporarily unavailable, and this account has no email/password credentials configured.',
             }, 401);
           }
 
