@@ -165,7 +165,7 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
         error: 'This user account has been disabled. Please contact the administrator.',
       };
     }
-    const localHash = (localUser as any).password_hash || (localUser as any).passwordHash;
+    const localHash = ((localUser as any).password_hash || (localUser as any).passwordHash || '').trim().toLowerCase();
     if (!localUser.password && !localHash) {
       return {
         success: false,
@@ -174,11 +174,12 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
       };
     }
     let isPasswordValid = false;
-    if (localUser.password && localUser.password === password) {
+    if (localUser.password && (localUser.password === password || localUser.password === password.trim())) {
       isPasswordValid = true;
     } else if (localHash) {
-      const submittedHash = await hashPassword(password);
-      if (submittedHash === localHash) {
+      const submittedHash = (await hashPassword(password)).toLowerCase();
+      const trimmedHash = password.trim() !== password ? (await hashPassword(password.trim())).toLowerCase() : null;
+      if (submittedHash === localHash || (trimmedHash && trimmedHash === localHash)) {
         isPasswordValid = true;
       }
     }
@@ -292,7 +293,7 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
           error: 'This user account has been disabled. Please contact the administrator.',
         };
       }
-      const localHash = (localUser as any).password_hash || (localUser as any).passwordHash;
+      const localHash = ((localUser as any).password_hash || (localUser as any).passwordHash || '').trim().toLowerCase();
       if (!localUser.password && !localHash) {
         return {
           success: false,
@@ -300,11 +301,12 @@ export async function loginUserViaD1(email: string, password: string): Promise<L
         };
       }
       let isPasswordValid = false;
-      if (localUser.password && localUser.password === password) {
+      if (localUser.password && (localUser.password === password || localUser.password === password.trim())) {
         isPasswordValid = true;
       } else if (localHash) {
-        const submittedHash = await hashPassword(password);
-        if (submittedHash === localHash) {
+        const submittedHash = (await hashPassword(password)).toLowerCase();
+        const trimmedHash = password.trim() !== password ? (await hashPassword(password.trim())).toLowerCase() : null;
+        if (submittedHash === localHash || (trimmedHash && trimmedHash === localHash)) {
           isPasswordValid = true;
         }
       }

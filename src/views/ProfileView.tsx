@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, Upload, Trash2, CheckCircle2, AlertCircle, FileText, Eye, Download, Calendar } from 'lucide-react';
+import { User, Upload, Trash2, CheckCircle2, AlertCircle, FileText, Eye, EyeOff, Lock, KeyRound, ShieldCheck, Download, Calendar } from 'lucide-react';
 import { UserProfile, LanguageMode, Expense, Settlement } from '../types';
 import { getAvailableReportMonths, downloadMonthlyPdf } from '../utils/pdfReportGenerator';
 import { formatMonthDisplay } from '../utils/monthFilter';
 import { MonthlyReportModal } from '../components/MonthlyReportModal';
 import { useLanguage } from '../i18n/LanguageContext';
+import { buildApiUrl } from '../services/apiConfig';
 
 interface ProfileViewProps {
   user: UserProfile;
@@ -36,6 +37,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [selectedReportMonth, setSelectedReportMonth] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  // Security & Password Management State
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const availableMonths = useMemo(() => {
     return getAvailableReportMonths(expenses, settlements);
@@ -134,6 +143,46 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       // Handled in parent
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (!newPassword) {
+      setPasswordError('Please enter a new password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/user/update-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, email: user.email, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setPasswordSuccess('Password successfully updated in production! You can now use this password across all devices and fresh browsers.');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPasswordError(data.error || 'Failed to update password. Please try again.');
+      }
+    } catch (err: any) {
+      setPasswordError(err?.message || 'Network error updating password.');
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 

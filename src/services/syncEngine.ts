@@ -565,28 +565,31 @@ export class SyncEngine {
         // Merge registered users (preserving local password/credentials cache for offline resilience)
         if (pullData.registeredUsers && pullData.registeredUsers.length > 0) {
           for (const u of pullData.registeredUsers) {
+            // Strict ID-based lookup: never associate credentials across different user IDs
             let existingUser = await idbGet<RegisteredUser>(STORES.USERS, u.id);
-            if (!existingUser && u.email) {
-              const allUsers = await idbGetAll<RegisteredUser>(STORES.USERS);
-              existingUser = allUsers.find((x) => x.email?.toLowerCase() === u.email?.toLowerCase());
+            if (existingUser && existingUser.id !== u.id) {
+              existingUser = undefined;
             }
 
-            // CRITICAL REGRESSION PROTECTION:
-            // syncEngine must NEVER overwrite a locally cached user's password with undefined/null
-            // when the sanitized user record returned by /api/sync/pull does not contain password_hash.
-            // The merge must strictly preserve existingUser.password when the remote sync user does not provide a password.
+            // CRITICAL REGRESSION & MISMATCH PROTECTION:
+            // syncEngine must ONLY preserve credentials if existingUser strictly matches u.id and u.email
+            const isExactAccountMatch = Boolean(
+              existingUser &&
+              existingUser.id === u.id &&
+              existingUser.email?.toLowerCase() === u.email?.toLowerCase()
+            );
+
             const preservedPassword =
-              existingUser?.password && existingUser.password.trim() !== ''
+              isExactAccountMatch && existingUser?.password && existingUser.password.trim() !== ''
                 ? existingUser.password
                 : (u.password && typeof u.password === 'string' && u.password.trim() !== '')
                 ? u.password
                 : undefined;
 
             const preservedPasswordHash =
-              (existingUser as any)?.password_hash ||
-              (existingUser as any)?.passwordHash ||
-              (u as any)?.password_hash ||
-              (u as any)?.passwordHash;
+              isExactAccountMatch && ((existingUser as any)?.password_hash || (existingUser as any)?.passwordHash)
+                ? ((existingUser as any)?.password_hash || (existingUser as any)?.passwordHash)
+                : ((u as any)?.password_hash || (u as any)?.passwordHash);
 
             await idbPut(STORES.USERS, {
               ...existingUser,
